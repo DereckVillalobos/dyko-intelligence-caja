@@ -1,40 +1,77 @@
 let ctx: AudioContext | null = null;
+let beepBuffer: AudioBuffer | null = null;
+let lastBeepAt = 0;
 
-export function playScanFeedback() {
+function audio(): AudioContext {
+  ctx ??= new AudioContext();
+  return ctx;
+}
+
+/** Classic POS piezo: loud 2.6 kHz square burst (~90 ms). */
+function buildBeep(context: AudioContext): AudioBuffer {
+  const duration = 0.1;
+  const sampleRate = context.sampleRate;
+  const n = Math.floor(sampleRate * duration);
+  const buffer = context.createBuffer(1, n, sampleRate);
+  const data = buffer.getChannelData(0);
+  const freq = 2650;
+  for (let i = 0; i < n; i++) {
+    const t = i / sampleRate;
+    const attack = Math.min(1, t / 0.003);
+    const release = t > duration - 0.012 ? Math.max(0, (duration - t) / 0.012) : 1;
+    const square = Math.sin(2 * Math.PI * freq * t) >= 0 ? 1 : -1;
+    data[i] = square * attack * release * 0.92;
+  }
+  return buffer;
+}
+
+export function unlockAudio() {
   try {
-    ctx ??= new AudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.value = 880;
-    gain.gain.value = 0.07;
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    const now = ctx.currentTime;
-    osc.start(now);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
-    osc.stop(now + 0.09);
+    const context = audio();
+    if (context.state === "suspended") void context.resume();
+    beepBuffer ??= buildBeep(context);
   } catch {
     /* audio optional */
   }
-  navigator.vibrate?.(35);
+}
+
+export function playScanFeedback() {
+  const now = performance.now();
+  if (now - lastBeepAt < 130) return;
+  lastBeepAt = now;
+  try {
+    const context = audio();
+    if (context.state === "suspended") void context.resume();
+    beepBuffer ??= buildBeep(context);
+    const src = context.createBufferSource();
+    const gain = context.createGain();
+    src.buffer = beepBuffer;
+    gain.gain.value = 1;
+    src.connect(gain);
+    gain.connect(context.destination);
+    src.start(context.currentTime);
+  } catch {
+    /* audio optional */
+  }
+  navigator.vibrate?.([50, 30, 40]);
 }
 
 export function playSuccessFeedback() {
   try {
-    ctx ??= new AudioContext();
-    const now = ctx.currentTime;
-    for (const [i, freq] of [660, 880].entries()) {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
+    const context = audio();
+    if (context.state === "suspended") void context.resume();
+    const now = context.currentTime;
+    for (const [i, freq] of [1320, 1980].entries()) {
+      const osc = context.createOscillator();
+      const gain = context.createGain();
+      osc.type = "square";
       osc.frequency.value = freq;
-      gain.gain.value = 0.06;
+      gain.gain.setValueAtTime(0.28, now + i * 0.07);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.07 + 0.14);
       osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now + i * 0.08);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.08 + 0.12);
-      osc.stop(now + i * 0.08 + 0.13);
+      gain.connect(context.destination);
+      osc.start(now + i * 0.07);
+      osc.stop(now + i * 0.07 + 0.15);
     }
   } catch {
     /* audio optional */

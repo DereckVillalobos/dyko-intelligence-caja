@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Plus, Search, X } from "lucide-react";
+import { Plus, ScanBarcode, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Scanner } from "@/components/pos/scanner";
 import { createProduct, listProducts, updateProduct } from "@/lib/pos/api";
 import { formatColones } from "@/lib/money";
 import { queryClient } from "@/lib/query-client";
@@ -114,6 +115,7 @@ function ProductForm({
   const [category, setCategory] = useState(product?.category ?? "Abarrotes");
   const [price, setPrice] = useState(product ? String(product.price) : "");
   const [stock, setStock] = useState(product ? String(product.stock) : "0");
+  const [scanOpen, setScanOpen] = useState(false);
 
   const createMut = useMutation({
     mutationFn: () =>
@@ -182,15 +184,31 @@ function ProductForm({
           <span className="text-sm font-medium">Nombre</span>
           <Input value={name} onChange={(e) => setName(e.target.value)} />
         </label>
-        <label className="block space-y-1">
+        <div className="space-y-1">
           <span className="text-sm font-medium">Código de barras</span>
-          <Input
-            value={barcode}
-            onChange={(e) => setBarcode(e.target.value)}
-            disabled={Boolean(product)}
-            className="font-mono disabled:opacity-60"
-          />
-        </label>
+          <div className="flex gap-2">
+            <Input
+              value={barcode}
+              onChange={(e) => setBarcode(e.target.value)}
+              disabled={Boolean(product)}
+              className="min-w-0 flex-1 font-mono disabled:opacity-60"
+              placeholder="Escanear o escribir"
+              inputMode="numeric"
+              aria-label="Código de barras"
+            />
+            {product ? null : (
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                onClick={() => setScanOpen(true)}
+                aria-label="Escanear código de barras"
+              >
+                <ScanBarcode className="size-5" />
+              </Button>
+            )}
+          </div>
+        </div>
         <label className="block space-y-1">
           <span className="text-sm font-medium">Categoría</span>
           <select
@@ -225,6 +243,16 @@ function ProductForm({
           {pending ? "Guardando…" : "Guardar"}
         </Button>
       </form>
+      <Scanner
+        open={scanOpen}
+        captureOnce
+        heading="Código del producto"
+        onClose={() => setScanOpen(false)}
+        onCode={(code) => {
+          setBarcode(code);
+          setScanOpen(false);
+        }}
+      />
     </div>
   );
 }

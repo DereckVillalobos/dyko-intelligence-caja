@@ -15,7 +15,7 @@ import { getSettings, getTodaySummary, listProducts, lookupBarcode } from "@/lib
 import { cartTotals, useCart } from "@/lib/pos/cart";
 import { CATEGORIES } from "@/lib/pos/types";
 import { formatColones, startOfCostaRicaDayIso } from "@/lib/money";
-import { playScanFeedback } from "@/lib/pos/beep";
+import { playScanFeedback, unlockAudio } from "@/lib/pos/beep";
 import type { Product } from "@/lib/pos/types";
 
 export const Route = createFileRoute("/_shell/")({ component: CajaPage });
@@ -164,7 +164,10 @@ function CajaPage() {
           <ProductGrid
             products={filtered}
             onProduct={handleProduct}
-            onScan={() => setScannerOpen(true)}
+            onScan={() => {
+              unlockAudio();
+              setScannerOpen(true);
+            }}
             onOpenAmount={() => setOpenAmount(true)}
           />
         )}

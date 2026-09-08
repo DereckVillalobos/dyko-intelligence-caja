@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { CameraOff, Keyboard, X } from "lucide-react";
+import { CameraOff, Flashlight, FlashlightOff, Keyboard, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { playScanFeedback } from "@/lib/pos/beep";
+import { playScanFeedback, unlockAudio } from "@/lib/pos/beep";
+import { startScanSession, type ScanSession } from "@/lib/pos/scan-engine";
 import { SEED_PRODUCTS } from "@/lib/pos/catalog";
 import { cn } from "@/lib/utils";
 
@@ -11,110 +12,68 @@ type ScannerProps = {
   onClose: () => void;
   onCode: (code: string) => void;
   lastAdded?: string | null;
+  captureOnce?: boolean;
+  heading?: string;
 };
 
-export function Scanner({ open, onClose, onCode, lastAdded }: ScannerProps) {
+export function Scanner({
+  open,
+  onClose,
+  onCode,
+  lastAdded,
+  captureOnce = false,
+  heading,
+}: ScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const sessionRef = useRef<ScanSession | null>(null);
   const [cameraError, setCameraError] = useState(false);
   const [manual, setManual] = useState("");
+  const [flash, setFlash] = useState(false);
+  const [torch, setTorch] = useState(false);
+  const [torchAvailable, setTorchAvailable] = useState(false);
   const onCodeRef = useRef(onCode);
   onCodeRef.current = onCode;
-  const lastCode = useRef({ value: "", at: 0 });
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const captureOnceRef = useRef(captureOnce);
+  captureOnceRef.current = captureOnce;
 
   useEffect(() => {
     if (!open) return;
     setCameraError(false);
-    let cancelled = false;
-    let raf = 0;
-    let stop: (() => void) | undefined;
+    setTorch(false);
+    setTorchAvailable(false);
+    unlockAudio();
     const video = videoRef.current;
+    if (!video) return;
+    let cancelled = false;
 
-    async function start() {
-      if (!video) return;
-      try {
-        if ("BarcodeDetector" in window) {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            audio: false,
-            video: {
-              facingMode: { ideal: "environment" },
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-            },
-          });
-          if (cancelled) {
-            stream.getTracks().forEach((t) => t.stop());
-            return;
-          }
-          video.srcObject = stream;
-          video.setAttribute("playsinline", "true");
-          video.muted = true;
-          await video.play();
-          const detector = new BarcodeDetector({
-            formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "qr_code"],
-          });
-          const tick = async () => {
-            if (cancelled) return;
-            try {
-              if (video.readyState >= 2) {
-                const codes = await detector.detect(video);
-                const value = codes[0]?.rawValue?.trim();
-                if (value) emit(value);
-              }
-            } catch {
-              /* keep looping */
-            }
-            raf = requestAnimationFrame(tick);
-          };
-          raf = requestAnimationFrame(tick);
-          stop = () => stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-
-        const { BarcodeFormat, BrowserMultiFormatReader } = await import("@zxing/browser");
-        const { DecodeHintType } = await import("@zxing/library");
-        const hints = new Map();
-        hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-          BarcodeFormat.EAN_13,
-          BarcodeFormat.EAN_8,
-          BarcodeFormat.UPC_A,
-          BarcodeFormat.UPC_E,
-          BarcodeFormat.CODE_128,
-          BarcodeFormat.QR_CODE,
-        ]);
-        const reader = new BrowserMultiFormatReader(hints);
-        const controls = await reader.decodeFromConstraints(
-          { audio: false, video: { facingMode: { ideal: "environment" } } },
-          video,
-          (result) => {
-            const value = result?.getText()?.trim();
-            if (value) emit(value);
-          },
-        );
-        stop = () => controls.stop();
-      } catch {
+    void startScanSession(video, {
+      onCode: (code) => {
+        playScanFeedback();
+        setFlash(true);
+        window.setTimeout(() => setFlash(false), 120);
+        onCodeRef.current(code);
+        if (captureOnceRef.current) onCloseRef.current();
+      },
+      onError: () => {
         if (!cancelled) setCameraError(true);
+      },
+      onTorch: (available) => {
+        if (!cancelled) setTorchAvailable(available);
+      },
+    }).then((session) => {
+      if (cancelled) {
+        session.stop();
+        return;
       }
-    }
-
-    function emit(code: string) {
-      const now = Date.now();
-      if (code === lastCode.current.value && now - lastCode.current.at < 1200) return;
-      lastCode.current = { value: code, at: now };
-      playScanFeedback();
-      onCodeRef.current(code);
-    }
-
-    void start();
+      sessionRef.current = session;
+    });
 
     return () => {
       cancelled = true;
-      cancelAnimationFrame(raf);
-      stop?.();
-      if (video) {
-        const stream = video.srcObject as MediaStream | null;
-        stream?.getTracks().forEach((t) => t.stop());
-        video.srcObject = null;
-      }
+      sessionRef.current?.stop();
+      sessionRef.current = null;
     };
   }, [open]);
 
@@ -126,10 +85,11 @@ export function Scanner({ open, onClose, onCode, lastAdded }: ScannerProps) {
     playScanFeedback();
     onCode(code);
     setManual("");
+    if (captureOnce) onClose();
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-fg text-primary-fg">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-fg text-primary-fg">
       <div className="relative min-h-0 flex-1">
         <video
           ref={videoRef}
@@ -148,26 +108,52 @@ export function Scanner({ open, onClose, onCode, lastAdded }: ScannerProps) {
           </div>
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
-            <div className="h-28 w-[86%] max-w-sm rounded-2xl border-2 border-primary-fg/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
+            <div className="relative h-32 w-[90%] max-w-sm">
+              <div className="absolute inset-0 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.42)]" />
+              <div className="absolute -top-px -left-px h-8 w-8 rounded-tl-2xl border-t-[3px] border-l-[3px] border-primary-fg" />
+              <div className="absolute -top-px -right-px h-8 w-8 rounded-tr-2xl border-t-[3px] border-r-[3px] border-primary-fg" />
+              <div className="absolute -bottom-px -left-px h-8 w-8 rounded-bl-2xl border-b-[3px] border-l-[3px] border-primary-fg" />
+              <div className="absolute -right-px -bottom-px h-8 w-8 rounded-br-2xl border-r-[3px] border-b-[3px] border-primary-fg" />
+              <div className="absolute inset-x-3 top-1/2 h-0.5 -translate-y-1/2 bg-danger shadow-[0_0_12px_2px_rgba(255,59,48,0.85)]" />
+            </div>
           </div>
         )}
+        {flash ? <div className="absolute inset-0 bg-primary-fg/35" /> : null}
         <div className="absolute inset-x-0 top-0 flex items-start justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))]">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.16em] text-primary-fg/60">
               Escáner
             </p>
-            <p className="text-[17px] font-semibold">Alinee el código de barras</p>
+            <p className="text-[17px] font-semibold">
+              {heading ?? (captureOnce ? "Escanee el código de barras" : "Alinee el código de barras")}
+            </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex size-11 items-center justify-center rounded-full bg-primary-fg/15"
-            aria-label="Cerrar"
-          >
-            <X className="size-5" />
-          </button>
+          <div className="flex gap-2">
+            {torchAvailable ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !torch;
+                  setTorch(next);
+                  void sessionRef.current?.setTorch(next);
+                }}
+                className="flex size-11 items-center justify-center rounded-full bg-primary-fg/15"
+                aria-label={torch ? "Apagar linterna" : "Linterna"}
+              >
+                {torch ? <Flashlight className="size-5" /> : <FlashlightOff className="size-5" />}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex size-11 items-center justify-center rounded-full bg-primary-fg/15"
+              aria-label="Cerrar"
+            >
+              <X className="size-5" />
+            </button>
+          </div>
         </div>
-        {lastAdded ? (
+        {lastAdded && !captureOnce ? (
           <div className="absolute inset-x-4 top-24 rounded-2xl bg-success/90 px-4 py-3 text-[15px] font-medium">
             Agregado: {lastAdded}
           </div>
@@ -194,7 +180,7 @@ export function Scanner({ open, onClose, onCode, lastAdded }: ScannerProps) {
             />
           </div>
           <Button type="submit" disabled={!manual.trim()}>
-            Agregar
+            {captureOnce ? "Usar" : "Agregar"}
           </Button>
         </form>
         {cameraError ? (
@@ -206,6 +192,7 @@ export function Scanner({ open, onClose, onCode, lastAdded }: ScannerProps) {
                 onClick={() => {
                   playScanFeedback();
                   onCode(p.barcode);
+                  if (captureOnce) onClose();
                 }}
                 className="rounded-xl bg-fill px-3 py-2.5 text-left active:scale-[0.98]"
               >
@@ -216,7 +203,7 @@ export function Scanner({ open, onClose, onCode, lastAdded }: ScannerProps) {
           </div>
         ) : null}
         <Button variant="secondary" className="w-full" onClick={onClose}>
-          Listo
+          {captureOnce ? "Cancelar" : "Listo"}
         </Button>
       </div>
     </div>
