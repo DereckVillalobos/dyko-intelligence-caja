@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { ANIMAL_KEYS, parseAnimal, parseColor } from "./avatar";
 import type { StaffRole } from "./staff";
 
 type Sql = Awaited<ReturnType<(typeof import("@/lib/db"))["getSql"]>>;
@@ -14,9 +15,22 @@ export type PublicEmployee = {
   name: string;
   role: StaffRole;
   bound: boolean;
+  animal: string;
+  color: string;
 };
 
 const pinSchema = z.string().regex(/^\d{4}$/, "El PIN debe tener 4 dígitos");
+const animalSchema = z.enum(ANIMAL_KEYS);
+const colorSchema = z.enum([
+  "peach",
+  "butter",
+  "mint",
+  "sky",
+  "lilac",
+  "rose",
+  "cream",
+  "sage",
+]);
 
 async function hashPin(pin: string, salt: string) {
   const { scryptSync } = await import("node:crypto");
@@ -31,24 +45,40 @@ async function verifyPin(pin: string, salt: string, hash: string) {
   return timingSafeEqual(next, prev);
 }
 
-function asPublic(row: { id: number; name: string; role: string; device_token: string | null }): PublicEmployee {
+type EmployeeRow = {
+  id: number;
+  name: string;
+  role: string;
+  device_token: string | null;
+  avatar_animal: string | null;
+  avatar_color: string | null;
+};
+
+function asPublic(row: EmployeeRow): PublicEmployee {
   return {
     id: row.id,
     name: row.name,
     role: row.role === "admin" ? "admin" : "cajero",
     bound: Boolean(row.device_token),
+    animal: parseAnimal(row.avatar_animal),
+    color: parseColor(row.avatar_color),
+  };
+}
+
+function asSession(row: EmployeeRow) {
+  return {
+    employeeId: row.id,
+    name: row.name,
+    role: (row.role === "admin" ? "admin" : "cajero") as StaffRole,
+    animal: parseAnimal(row.avatar_animal),
+    color: parseColor(row.avatar_color),
   };
 }
 
 export const listEmployees = createServerFn({ method: "GET" }).handler(async () => {
   const sql = await db();
-  const rows = await sql<{
-    id: number;
-    name: string;
-    role: string;
-    device_token: string | null;
-  }>`
-    select id, name, role, device_token
+  const rows = await sql<EmployeeRow>`
+    select id, name, role, device_token, avatar_animal, avatar_color
     from employees
     where active = true
     order by name
@@ -60,13 +90,8 @@ export const findBoundEmployee = createServerFn({ method: "POST" })
   .validator(z.object({ deviceId: z.string().uuid() }))
   .handler(async ({ data }) => {
     const sql = await db();
-    const rows = await sql<{
-      id: number;
-      name: string;
-      role: string;
-      device_token: string | null;
-    }>`
-      select id, name, role, device_token
+    const rows = await sql<EmployeeRow>`
+      select id, name, role, device_token, avatar_animal, avatar_color
       from employees
       where device_token = ${data.deviceId} and active = true
       limit 1
@@ -90,9 +115,12 @@ async function unlockRow(
     device_token: string | null;
     failed_attempts: number;
     locked_until: string | null;
+    avatar_animal: string | null;
+    avatar_color: string | null;
   }>`
     select id, name, role, pin_hash, pin_salt, device_token,
-           failed_attempts, locked_until::text as locked_until
+           failed_attempts, locked_until::text as locked_until,
+           avatar_animal, avatar_color
     from employees
     where id = ${employeeId} and active = true
     limit 1
@@ -131,11 +159,7 @@ async function unlockRow(
     `;
   }
 
-  return {
-    employeeId: row.id,
-    name: row.name,
-    role: (row.role === "admin" ? "admin" : "cajero") as StaffRole,
-  };
+  return asSession(row);
 }
 
 export const unlockEmployee = createServerFn({ method: "POST" })
@@ -159,27 +183,34 @@ export const setupFirstEmployee = createServerFn({ method: "POST" })
       pin: pinSchema,
       deviceId: z.string().uuid(),
       bind: z.boolean(),
+      animal: animalSchema,
+      color: colorSchema,
     }),
   )
   .handler(async ({ data }) => {
     const sql = await db();
     const [{ n }] = await sql<{ n: number }>`select count(*)::int as n from employees`;
-    if (n > 0) throw new Error("El equipo ya está configurado");
+    if (n > 0) {
+      const existing = await sql<EmployeeRow>`
+        select id, name, role, device_token, avatar_animal, avatar_color
+        from employees
+        where active = true
+        order by id
+        limit 1
+      `;
+      if (existing[0]) return asSession(existing[0]);
+      throw new Error("El equipo ya está configurado");
+    }
     const { randomBytes } = await import("node:crypto");
     const salt = randomBytes(16).toString("hex");
     const pinHash = await hashPin(data.pin, salt);
     const token = data.bind ? data.deviceId : null;
-    const rows = await sql<{ id: number; name: string; role: string }>`
-      insert into employees (name, pin_hash, pin_salt, role, device_token)
-      values (${data.name}, ${pinHash}, ${salt}, 'admin', ${token})
-      returning id, name, role
+    const rows = await sql<EmployeeRow>`
+      insert into employees (name, pin_hash, pin_salt, role, device_token, avatar_animal, avatar_color)
+      values (${data.name}, ${pinHash}, ${salt}, 'admin', ${token}, ${data.animal}, ${data.color})
+      returning id, name, role, device_token, avatar_animal, avatar_color
     `;
-    const row = rows[0]!;
-    return {
-      employeeId: row.id,
-      name: row.name,
-      role: "admin" as const,
-    };
+    return asSession(rows[0]!);
   });
 
 export const createEmployee = createServerFn({ method: "POST" })
@@ -187,27 +218,26 @@ export const createEmployee = createServerFn({ method: "POST" })
     z.object({
       name: z.string().trim().min(2).max(40),
       pin: pinSchema,
-      actorId: z.number().int().positive(),
+      animal: animalSchema,
+      color: colorSchema,
+      actorId: z.number().int().positive().optional(),
     }),
   )
   .handler(async ({ data }) => {
     const sql = await db();
-    const actor = await sql<{ role: string }>`
-      select role from employees where id = ${data.actorId} and active = true limit 1
-    `;
-    if (actor[0]?.role !== "admin") throw new Error("Solo un responsable puede agregar personal");
+    if (data.actorId) {
+      const actor = await sql<{ role: string }>`
+        select role from employees where id = ${data.actorId} and active = true limit 1
+      `;
+      if (actor[0]?.role !== "admin") throw new Error("Solo un responsable puede agregar personal");
+    }
     const { randomBytes } = await import("node:crypto");
     const salt = randomBytes(16).toString("hex");
     const pinHash = await hashPin(data.pin, salt);
-    const rows = await sql<{
-      id: number;
-      name: string;
-      role: string;
-      device_token: string | null;
-    }>`
-      insert into employees (name, pin_hash, pin_salt, role)
-      values (${data.name}, ${pinHash}, ${salt}, 'cajero')
-      returning id, name, role, device_token
+    const rows = await sql<EmployeeRow>`
+      insert into employees (name, pin_hash, pin_salt, role, avatar_animal, avatar_color)
+      values (${data.name}, ${pinHash}, ${salt}, 'cajero', ${data.animal}, ${data.color})
+      returning id, name, role, device_token, avatar_animal, avatar_color
     `;
     return asPublic(rows[0]!);
   });

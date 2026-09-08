@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AnimalAvatar } from "@/components/pos/animal-avatar";
-import { PinPad } from "@/components/pos/pin-pad";
+import { EmployeeForm, type EmployeeDraft } from "@/components/pos/employee-form";
 import { getSettings, saveSettings } from "@/lib/pos/api";
 import { createEmployee, listEmployees, unbindDevice } from "@/lib/pos/staff-api";
 import { getDeviceId, useStaff } from "@/lib/pos/staff";
@@ -72,7 +72,14 @@ function AjustesPage() {
         </p>
         <div className="ios-list rounded-2xl px-4 py-3">
           <div className="flex items-center gap-3">
-            {session ? <AnimalAvatar id={session.employeeId} name={session.name} size="sm" /> : null}
+            {session ? (
+              <AnimalAvatar
+                name={session.name}
+                animal={session.animal}
+                color={session.color}
+                size="sm"
+              />
+            ) : null}
             <div className="min-w-0">
               <p className="text-[17px] font-semibold">{session?.name}</p>
               <p className="text-sm text-muted">
@@ -117,7 +124,12 @@ function AjustesPage() {
           <ul className="grid grid-cols-2 gap-2">
             {(employeesQuery.data ?? []).map((person) => (
               <li key={person.id} className="ios-list flex flex-col items-center gap-2 rounded-2xl px-3 py-4">
-                <AnimalAvatar id={person.id} name={person.name} size="md" />
+                <AnimalAvatar
+                  name={person.name}
+                  animal={person.animal}
+                  color={person.color}
+                  size="md"
+                />
                 <span className="min-w-0 text-center">
                   <span className="block truncate text-[15px] font-medium">{person.name}</span>
                   <span className="text-xs text-muted">
@@ -179,52 +191,48 @@ function AjustesPage() {
         </p>
       </section>
 
-      {adding && session ? (
-        <AddEmployee
-          actorId={session.employeeId}
-          onClose={() => setAdding(false)}
-        />
+      {adding ? (
+        <div className="fixed inset-0 z-50 bg-bg">
+          <AddEmployee
+            actorId={session?.employeeId}
+            onClose={() => setAdding(false)}
+          />
+        </div>
       ) : null}
     </main>
   );
 }
 
-function AddEmployee({ actorId, onClose }: { actorId: number; onClose: () => void }) {
-  const [name, setName] = useState("");
-  const [pin, setPin] = useState("");
+function AddEmployee({ actorId, onClose }: { actorId?: number; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => createEmployee({ data: { name: name.trim(), pin, actorId } }),
+    mutationFn: (draft: EmployeeDraft) =>
+      createEmployee({
+        data: {
+          name: draft.name,
+          pin: draft.pin,
+          animal: draft.animal,
+          color: draft.color,
+          actorId,
+        },
+      }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["employees"] });
-      toast.success("Empleado agregado");
+      toast.success("Trabajador agregado");
       onClose();
     },
     onError: (err: Error) => setError(err.message),
   });
 
-  useEffect(() => {
-    if (pin.length === 4 && name.trim().length >= 2) mutation.mutate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pin]);
-
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-overlay sm:items-center">
-      <div className="glass-sheet w-full max-w-md space-y-4 rounded-t-3xl p-5 sm:rounded-3xl">
-        <p className="text-[17px] font-semibold">Nuevo empleado</p>
-        <p className="text-sm text-muted">Solo nombre y PIN. Sin datos personales.</p>
-        <Field label="Nombre">
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Carlos" />
-        </Field>
-        <p className="text-sm font-medium">PIN de 4 dígitos</p>
-        <PinPad value={pin} onChange={(next) => { setError(null); setPin(next); }} disabled={mutation.isPending || name.trim().length < 2} error={Boolean(error)} />
-        {error ? <p className="text-sm text-danger">{error}</p> : null}
-        <Button variant="secondary" className="w-full" onClick={onClose}>
-          Cancelar
-        </Button>
-      </div>
-    </div>
+    <EmployeeForm
+      kicker="Nuevo trabajador"
+      onBack={onClose}
+      pending={mutation.isPending}
+      error={error}
+      onSubmit={(draft) => mutation.mutate(draft)}
+    />
   );
 }
 

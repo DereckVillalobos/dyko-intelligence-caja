@@ -8,6 +8,8 @@ export type StaffSession = {
   employeeId: number;
   name: string;
   role: StaffRole;
+  animal: string;
+  color: string;
 };
 
 type StaffState = {

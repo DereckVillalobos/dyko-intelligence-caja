@@ -36,7 +36,8 @@ function CajaPage() {
   const addOpenAmount = useCart((s) => s.addOpenAmount);
   const items = useCart((s) => s.items);
   const cashier = useStaff((s) => s.session?.name ?? "Caja");
-  const cashierId = useStaff((s) => s.session?.employeeId);
+  const cashierAnimal = useStaff((s) => s.session?.animal);
+  const cashierColor = useStaff((s) => s.session?.color);
   const { count, total } = cartTotals(items);
 
   const productsQuery = useQuery({
@@ -117,7 +118,9 @@ function CajaPage() {
             </p>
             <h1 className="font-display text-2xl font-semibold tracking-tight">Caja</h1>
             <p className="flex items-center gap-2 text-sm text-muted">
-              {cashierId ? <AnimalAvatar id={cashierId} name={cashier} size="xs" /> : null}
+              {cashierAnimal ? (
+                <AnimalAvatar name={cashier} animal={cashierAnimal} color={cashierColor} size="xs" />
+              ) : null}
               <span>Cobra {cashier}</span>
             </p>
           </div>

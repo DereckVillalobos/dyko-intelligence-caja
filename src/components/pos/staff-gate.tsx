@@ -1,18 +1,19 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Building2, Smartphone } from "lucide-react";
+import { Building2, Plus, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { AnimalAvatar } from "@/components/pos/animal-avatar";
+import { EmployeeForm, type EmployeeDraft } from "@/components/pos/employee-form";
 import { PinPad } from "@/components/pos/pin-pad";
 import {
+  createEmployee,
   findBoundEmployee,
   listEmployees,
   setupFirstEmployee,
   unlockEmployee,
   type PublicEmployee,
 } from "@/lib/pos/staff-api";
-import { getDeviceId, useStaff, type DeviceMode } from "@/lib/pos/staff";
+import { getDeviceId, useStaff, type DeviceMode, type StaffSession } from "@/lib/pos/staff";
 import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
 
@@ -60,7 +61,15 @@ export function StaffGate({ children }: { children: React.ReactNode }) {
     void findBoundEmployee({ data: { deviceId: getDeviceId() } })
       .then((bound) => {
         if (cancelled) return;
-        if (bound) signIn({ employeeId: bound.id, name: bound.name, role: bound.role });
+        if (bound) {
+          signIn({
+            employeeId: bound.id,
+            name: bound.name,
+            role: bound.role,
+            animal: bound.animal,
+            color: bound.color,
+          });
+        }
         setCheckingBind(false);
       })
       .catch(() => {
@@ -182,22 +191,18 @@ function FirstEmployee({
   onBack,
 }: {
   mode: DeviceMode;
-  onDone: (session: { employeeId: number; name: string; role: "admin" }) => void;
+  onDone: (session: StaffSession) => void;
   onBack: () => void;
 }) {
-  const [name, setName] = useState("");
-  const [pin, setPin] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [step, setStep] = useState<"name" | "pin" | "confirm">("name");
   const [error, setError] = useState<string | null>(null);
-  const submitted = useRef(false);
-
   const mutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (draft: EmployeeDraft) =>
       setupFirstEmployee({
         data: {
-          name: name.trim(),
-          pin: confirm,
+          name: draft.name,
+          pin: draft.pin,
+          animal: draft.animal,
+          color: draft.color,
           deviceId: getDeviceId(),
           bind: mode === "personal",
         },
@@ -207,72 +212,21 @@ function FirstEmployee({
       onDone(session);
     },
     onError: (err: Error) => {
-      submitted.current = false;
       setError(err.message);
-      setConfirm("");
       if (err.message.includes("ya está configurado")) {
         void queryClient.invalidateQueries({ queryKey: ["employees"] });
       }
     },
   });
 
-  useEffect(() => {
-    if (step === "pin" && pin.length === 4) setStep("confirm");
-    if (step === "confirm" && confirm.length === 4 && !submitted.current) {
-      if (confirm !== pin) {
-        setError("Los PIN no coinciden");
-        setConfirm("");
-        return;
-      }
-      submitted.current = true;
-      mutation.mutate();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pin, confirm, step]);
-
   return (
-    <div className="mx-auto flex min-h-dvh max-w-md flex-col px-5 py-8 pt-[max(2rem,env(safe-area-inset-top))]">
-      <p className="text-xs font-medium tracking-wide text-muted uppercase">Responsable de esta caja</p>
-      <h1 className="font-display mt-2 text-[28px] leading-tight font-semibold tracking-tight">
-        {step === "name" ? "¿Cómo se llama?" : step === "pin" ? "Cree su PIN" : "Confirme el PIN"}
-      </h1>
-      <p className="mt-2 text-[15px] text-muted">
-        {step === "name"
-          ? mode === "personal"
-            ? "Así sale en el ticket. Este teléfono queda solo a su nombre: no hay que agregar a nadie más."
-            : "Así va a aparecer en cada venta. Un nombre es suficiente."
-          : "4 dígitos. No lo comparta. Si olvida el PIN, el responsable del local lo puede cambiar."}
-      </p>
-      {step === "name" ? (
-        <>
-          <Input
-            className="mt-6"
-            value={name}
-            autoFocus
-            placeholder="Ej. María"
-            onChange={(e) => setName(e.target.value)}
-          />
-          <div className="mt-auto flex flex-col gap-2">
-            <Button size="lg" disabled={name.trim().length < 2} onClick={() => setStep("pin")}>
-              Continuar
-            </Button>
-            <Button variant="ghost" onClick={onBack}>
-              Atrás
-            </Button>
-          </div>
-        </>
-      ) : (
-        <div className="mt-10">
-          <PinPad
-            value={step === "pin" ? pin : confirm}
-            onChange={step === "pin" ? setPin : setConfirm}
-            disabled={mutation.isPending}
-            error={Boolean(error)}
-          />
-          {error ? <p className="mt-4 text-center text-sm text-danger">{error}</p> : null}
-        </div>
-      )}
-    </div>
+    <EmployeeForm
+      kicker="Responsable de esta caja"
+      onBack={onBack}
+      pending={mutation.isPending}
+      error={error}
+      onSubmit={(draft) => mutation.mutate(draft)}
+    />
   );
 }
 
@@ -283,9 +237,10 @@ function LockScreen({
 }: {
   mode: DeviceMode;
   employees: PublicEmployee[];
-  onUnlock: (session: { employeeId: number; name: string; role: PublicEmployee["role"] }) => void;
+  onUnlock: (session: StaffSession) => void;
 }) {
   const [picked, setPicked] = useState<PublicEmployee | null>(null);
+  const [adding, setAdding] = useState(false);
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -312,15 +267,13 @@ function LockScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pin]);
 
-  useEffect(() => {
-    if (mode === "personal" && employees.length === 1 && !picked) {
-      setPicked(employees[0]!);
-    }
-  }, [mode, employees, picked]);
+  if (adding) {
+    return <AddTeammate onBack={() => setAdding(false)} />;
+  }
 
   if (!picked) {
     return (
-      <div className="mx-auto flex min-h-dvh max-w-md flex-col px-5 py-8 pt-[max(2rem,env(safe-area-inset-top))]">
+      <div className="mx-auto flex min-h-dvh max-w-md flex-col px-5 py-8 pt-[max(2rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))]">
         <p className="text-xs font-medium tracking-wide text-muted uppercase">
           {mode === "personal" ? "Vincular este teléfono" : "Turno"}
         </p>
@@ -332,7 +285,13 @@ function LockScreen({
             ? "Toque su perfil. Este teléfono queda ligado a usted."
             : "Toque su perfil e ingrese su PIN de 4 dígitos."}
         </p>
-        <ul className={employees.length === 1 ? "mt-8 flex justify-center" : "mt-8 grid grid-cols-2 gap-3"}>
+        <ul
+          className={
+            employees.length === 1
+              ? "mt-8 flex justify-center"
+              : "mt-8 grid grid-cols-2 gap-3"
+          }
+        >
           {employees.map((person) => (
             <li key={person.id} className={employees.length === 1 ? "w-44" : undefined}>
               <button
@@ -344,7 +303,12 @@ function LockScreen({
                 }}
                 className="ios-list flex w-full flex-col items-center gap-3 rounded-3xl px-3 py-5 text-center transition-transform duration-150 active:scale-[0.98]"
               >
-                <AnimalAvatar id={person.id} name={person.name} size="lg" />
+                <AnimalAvatar
+                  name={person.name}
+                  animal={person.animal}
+                  color={person.color}
+                  size="lg"
+                />
                 <span className="min-w-0">
                   <span className="block truncate text-[17px] font-semibold">{person.name}</span>
                   <span className="text-xs text-muted">
@@ -355,21 +319,25 @@ function LockScreen({
             </li>
           ))}
         </ul>
+        {mode === "shared" ? (
+          <div className="mt-auto pt-6">
+            <Button variant="secondary" size="lg" className="w-full" onClick={() => setAdding(true)}>
+              <Plus className="size-4" />
+              Agregar trabajador
+            </Button>
+          </div>
+        ) : null}
       </div>
     );
   }
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col px-5 py-8 pt-[max(2rem,env(safe-area-inset-top))]">
-      {mode === "personal" && employees.length === 1 ? (
-        <span className="h-5" />
-      ) : (
-        <button type="button" className="self-start text-sm font-medium text-primary" onClick={() => setPicked(null)}>
-          Atrás
-        </button>
-      )}
+      <button type="button" className="self-start text-sm font-medium text-primary" onClick={() => setPicked(null)}>
+        Atrás
+      </button>
       <div className="mt-6 flex flex-col items-center">
-        <AnimalAvatar id={picked.id} name={picked.name} size="lg" />
+        <AnimalAvatar name={picked.name} animal={picked.animal} color={picked.color} size="lg" />
         <h1 className="font-display mt-3 text-2xl font-semibold tracking-tight">{picked.name}</h1>
         <p className="mt-1 text-sm text-muted">Ingrese su PIN de 4 dígitos</p>
       </div>
@@ -378,5 +346,35 @@ function LockScreen({
         {error ? <p className="mt-4 text-center text-sm text-danger">{error}</p> : null}
       </div>
     </div>
+  );
+}
+
+function AddTeammate({ onBack }: { onBack: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const mutation = useMutation({
+    mutationFn: (draft: EmployeeDraft) =>
+      createEmployee({
+        data: {
+          name: draft.name,
+          pin: draft.pin,
+          animal: draft.animal,
+          color: draft.color,
+        },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["employees"] });
+      onBack();
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  return (
+    <EmployeeForm
+      kicker="Nuevo trabajador"
+      onBack={onBack}
+      pending={mutation.isPending}
+      error={error}
+      onSubmit={(draft) => mutation.mutate(draft)}
+    />
   );
 }
