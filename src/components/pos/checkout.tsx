@@ -88,7 +88,7 @@ export function Checkout({ open, onClose }: { open: boolean; onClose: () => void
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-overlay sm:items-center">
-      <div className="glass-sheet flex max-h-[92dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl sm:rounded-3xl">
+      <div className="glass-sheet flex max-h-[92dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:rounded-3xl sm:pb-0">
         <div className="flex items-center justify-between px-5 pt-4 pb-2">
           <p className="text-[13px] font-medium tracking-wide text-muted uppercase">
             {step === "method" && "Cobrar"}
@@ -174,10 +174,10 @@ export function Checkout({ open, onClose }: { open: boolean; onClose: () => void
               </div>
               <Keypad value={tendered} onChange={setTendered} />
             </div>
-            <div className="px-5 pt-3 pb-6">
+            <div className="px-5 pt-3 pb-4">
               <Button
                 size="lg"
-                className="w-full"
+                className="h-14 w-full text-[17px]"
                 disabled={!canConfirmCash || mutation.isPending}
                 onClick={() => mutation.mutate("cash")}
               >

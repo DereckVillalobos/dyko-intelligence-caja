@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AnimalAvatar } from "@/components/pos/animal-avatar";
 import { PinPad } from "@/components/pos/pin-pad";
 import { getSettings, saveSettings } from "@/lib/pos/api";
 import { createEmployee, listEmployees, unbindDevice } from "@/lib/pos/staff-api";
@@ -70,11 +71,15 @@ function AjustesPage() {
           Este teléfono
         </p>
         <div className="ios-list rounded-2xl px-4 py-3">
-          <p className="text-[17px] font-semibold">{session?.name}</p>
-          <p className="text-sm text-muted">
-            {session?.role === "admin" ? "Responsable" : "Cajero"} ·{" "}
-            {mode === "personal" ? "teléfono personal vinculado" : "teléfono de la empresa"}
-          </p>
+          <div className="flex items-center gap-3">
+            {session ? <AnimalAvatar id={session.employeeId} name={session.name} size="sm" /> : null}
+            <div className="min-w-0">
+              <p className="text-[17px] font-semibold">{session?.name}</p>
+              <p className="text-sm text-muted">
+                {mode === "personal" ? "Teléfono personal" : session?.role === "admin" ? "Responsable" : "Cajero"}
+              </p>
+            </div>
+          </div>
           <Button variant="secondary" className="mt-3 w-full" onClick={() => void closeShift()}>
             {mode === "personal" ? "Desvincular este teléfono" : "Cerrar turno"}
           </Button>
@@ -104,36 +109,40 @@ function AjustesPage() {
         </div>
       </section>
 
-      <section className="mt-6">
-        <p className="mb-2 px-1 text-xs font-medium tracking-wide text-muted uppercase">
-          Equipo
-        </p>
-        <ul className="ios-list divide-y divide-border overflow-hidden rounded-2xl">
-          {(employeesQuery.data ?? []).map((person) => (
-            <li key={person.id} className="flex items-center gap-3 px-4 py-3">
-              <span className="flex size-9 items-center justify-center rounded-full bg-fill text-sm font-semibold">
-                {person.name.slice(0, 1).toUpperCase()}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[15px] font-medium">{person.name}</span>
-                <span className="text-xs text-muted">
-                  {person.role === "admin" ? "Responsable" : "Cajero"}
-                  {person.bound ? " · vinculado" : ""}
-                </span>
-              </span>
-            </li>
-          ))}
-        </ul>
-        {isAdmin ? (
-          <Button variant="secondary" className="mt-3 w-full" onClick={() => setAdding(true)}>
-            Agregar empleado
-          </Button>
-        ) : (
-          <p className="mt-2 px-1 text-xs text-muted">
-            Solo el responsable puede agregar personal. Cada quien usa nombre y PIN, nada más.
+      {mode === "shared" ? (
+        <section className="mt-6">
+          <p className="mb-2 px-1 text-xs font-medium tracking-wide text-muted uppercase">
+            Equipo
           </p>
-        )}
-      </section>
+          <ul className="grid grid-cols-2 gap-2">
+            {(employeesQuery.data ?? []).map((person) => (
+              <li key={person.id} className="ios-list flex flex-col items-center gap-2 rounded-2xl px-3 py-4">
+                <AnimalAvatar id={person.id} name={person.name} size="md" />
+                <span className="min-w-0 text-center">
+                  <span className="block truncate text-[15px] font-medium">{person.name}</span>
+                  <span className="text-xs text-muted">
+                    {person.role === "admin" ? "Responsable" : "Cajero"}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+          {isAdmin ? (
+            <Button variant="secondary" className="mt-3 w-full" onClick={() => setAdding(true)}>
+              Agregar cajero
+            </Button>
+          ) : (
+            <p className="mt-2 px-1 text-xs text-muted">
+              Solo el responsable puede agregar personal.
+            </p>
+          )}
+        </section>
+      ) : (
+        <p className="mt-6 px-1 text-sm text-muted">
+          Este teléfono es solo suyo. No hace falta agregar a nadie más. El equipo se gestiona en
+          el teléfono de la empresa.
+        </p>
+      )}
 
       <section className="mt-6">
         <p className="mb-2 px-1 text-xs font-medium tracking-wide text-muted uppercase">

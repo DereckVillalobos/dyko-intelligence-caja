@@ -11,7 +11,7 @@ export function CartPanel({ onCharge }: { onCharge: () => void }) {
   const { count, total } = cartTotals(items);
 
   return (
-    <aside className="flex h-full min-h-0 flex-col">
+    <aside className="flex min-h-0 max-h-[70dvh] flex-col">
       <div className="flex items-center justify-between px-1 pb-3">
         <div>
           <p className="text-xs font-medium tracking-wide text-muted uppercase">Venta actual</p>
@@ -73,15 +73,20 @@ export function CartPanel({ onCharge }: { onCharge: () => void }) {
         )}
       </div>
 
-      <div className="pt-4">
+      <div className="shrink-0 pt-4">
         <div className="mb-3 flex items-end justify-between">
           <span className="text-sm text-muted">Total</span>
           <span className="font-display text-3xl font-semibold tracking-tight tabular-nums">
             {formatColones(total)}
           </span>
         </div>
-        <Button size="lg" className="w-full" disabled={items.length === 0} onClick={onCharge}>
-          Cobrar
+        <Button
+          size="lg"
+          className="h-14 w-full text-[17px]"
+          disabled={items.length === 0}
+          onClick={onCharge}
+        >
+          Cobrar {formatColones(total)}
         </Button>
       </div>
     </aside>

@@ -16,6 +16,7 @@ import { cartTotals, useCart } from "@/lib/pos/cart";
 import { CATEGORIES } from "@/lib/pos/types";
 import { formatColones, startOfCostaRicaDayIso } from "@/lib/money";
 import { playScanFeedback, unlockAudio } from "@/lib/pos/beep";
+import { AnimalAvatar } from "@/components/pos/animal-avatar";
 import { useStaff } from "@/lib/pos/staff";
 import type { Product } from "@/lib/pos/types";
 
@@ -35,6 +36,7 @@ function CajaPage() {
   const addOpenAmount = useCart((s) => s.addOpenAmount);
   const items = useCart((s) => s.items);
   const cashier = useStaff((s) => s.session?.name ?? "Caja");
+  const cashierId = useStaff((s) => s.session?.employeeId);
   const { count, total } = cartTotals(items);
 
   const productsQuery = useQuery({
@@ -114,7 +116,10 @@ function CajaPage() {
               {settingsQuery.data?.storeName ?? "Dyko Intelligence"}
             </p>
             <h1 className="font-display text-2xl font-semibold tracking-tight">Caja</h1>
-            <p className="text-sm text-muted">Cobra {cashier}</p>
+            <p className="flex items-center gap-2 text-sm text-muted">
+              {cashierId ? <AnimalAvatar id={cashierId} name={cashier} size="xs" /> : null}
+              <span>Cobra {cashier}</span>
+            </p>
           </div>
           <p className="text-right text-sm text-muted">
             Hoy {todayQuery.data ? formatColones(todayQuery.data.total) : "—"}
@@ -174,36 +179,35 @@ function CajaPage() {
             onOpenAmount={() => setOpenAmount(true)}
           />
         )}
+        {count > 0 ? <div className="h-24 lg:hidden" /> : null}
       </section>
 
       <section className="hairline hidden rounded-3xl bg-bg-elevated p-4 lg:block">
         <CartPanel onCharge={() => setCheckoutOpen(true)} />
       </section>
 
-      {count > 0 ? (
-        <div className="glass-bar specular fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-30 rounded-2xl p-2 lg:hidden">
+      {count > 0 && !cartOpen && !checkoutOpen ? (
+        <div className="fixed inset-x-3 bottom-[calc(6.75rem+env(safe-area-inset-bottom))] z-30 lg:hidden">
           <Button
             size="lg"
-            className="w-full justify-between px-4"
+            className="h-14 w-full justify-between px-5 text-[17px] shadow-float"
             onClick={() => setCartOpen(true)}
           >
-            <span>
-              Ver venta · {count} {count === 1 ? "artículo" : "artículos"}
-            </span>
+            <span>Cobrar</span>
             <span className="tabular-nums">{formatColones(total)}</span>
           </Button>
         </div>
       ) : null}
 
       {cartOpen ? (
-        <div className="fixed inset-0 z-40 lg:hidden">
+        <div className="fixed inset-0 z-50 lg:hidden">
           <button
             type="button"
             className="absolute inset-0 bg-overlay"
             aria-label="Cerrar venta"
             onClick={() => setCartOpen(false)}
           />
-          <div className="glass-sheet absolute inset-x-0 bottom-0 flex max-h-[82dvh] flex-col rounded-t-3xl p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <div className="glass-sheet absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col rounded-t-3xl p-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
             <CartPanel
               onCharge={() => {
                 setCartOpen(false);

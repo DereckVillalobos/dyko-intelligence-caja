@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Building2, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AnimalAvatar } from "@/components/pos/animal-avatar";
 import { PinPad } from "@/components/pos/pin-pad";
 import {
   findBoundEmployee,
@@ -237,7 +238,9 @@ function FirstEmployee({
       </h1>
       <p className="mt-2 text-[15px] text-muted">
         {step === "name"
-          ? "Así va a aparecer en cada venta. Un nombre es suficiente."
+          ? mode === "personal"
+            ? "Así sale en el ticket. Este teléfono queda solo a su nombre: no hay que agregar a nadie más."
+            : "Así va a aparecer en cada venta. Un nombre es suficiente."
           : "4 dígitos. No lo comparta. Si olvida el PIN, el responsable del local lo puede cambiar."}
       </p>
       {step === "name" ? (
@@ -309,6 +312,12 @@ function LockScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pin]);
 
+  useEffect(() => {
+    if (mode === "personal" && employees.length === 1 && !picked) {
+      setPicked(employees[0]!);
+    }
+  }, [mode, employees, picked]);
+
   if (!picked) {
     return (
       <div className="mx-auto flex min-h-dvh max-w-md flex-col px-5 py-8 pt-[max(2rem,env(safe-area-inset-top))]">
@@ -320,12 +329,12 @@ function LockScreen({
         </h1>
         <p className="mt-2 text-[15px] text-muted">
           {mode === "personal"
-            ? "Elija su nombre. Este teléfono quedará ligado a usted."
-            : "Toque su nombre e ingrese su PIN de 4 dígitos."}
+            ? "Toque su perfil. Este teléfono queda ligado a usted."
+            : "Toque su perfil e ingrese su PIN de 4 dígitos."}
         </p>
-        <ul className="ios-list mt-6 divide-y divide-border overflow-hidden rounded-2xl">
+        <ul className={employees.length === 1 ? "mt-8 flex justify-center" : "mt-8 grid grid-cols-2 gap-3"}>
           {employees.map((person) => (
-            <li key={person.id}>
+            <li key={person.id} className={employees.length === 1 ? "w-44" : undefined}>
               <button
                 type="button"
                 onClick={() => {
@@ -333,16 +342,13 @@ function LockScreen({
                   setPin("");
                   setError(null);
                 }}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left"
+                className="ios-list flex w-full flex-col items-center gap-3 rounded-3xl px-3 py-5 text-center transition-transform duration-150 active:scale-[0.98]"
               >
-                <span className="flex size-10 items-center justify-center rounded-full bg-fill text-sm font-semibold">
-                  {person.name.slice(0, 1).toUpperCase()}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[17px] font-medium">{person.name}</span>
+                <AnimalAvatar id={person.id} name={person.name} size="lg" />
+                <span className="min-w-0">
+                  <span className="block truncate text-[17px] font-semibold">{person.name}</span>
                   <span className="text-xs text-muted">
                     {person.role === "admin" ? "Responsable" : "Cajero"}
-                    {person.bound ? " · teléfono vinculado" : ""}
                   </span>
                 </span>
               </button>
@@ -355,13 +361,15 @@ function LockScreen({
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col px-5 py-8 pt-[max(2rem,env(safe-area-inset-top))]">
-      <button type="button" className="self-start text-sm font-medium text-primary" onClick={() => setPicked(null)}>
-        Atrás
-      </button>
+      {mode === "personal" && employees.length === 1 ? (
+        <span className="h-5" />
+      ) : (
+        <button type="button" className="self-start text-sm font-medium text-primary" onClick={() => setPicked(null)}>
+          Atrás
+        </button>
+      )}
       <div className="mt-6 flex flex-col items-center">
-        <span className="flex size-16 items-center justify-center rounded-full bg-fill text-xl font-semibold">
-          {picked.name.slice(0, 1).toUpperCase()}
-        </span>
+        <AnimalAvatar id={picked.id} name={picked.name} size="lg" />
         <h1 className="font-display mt-3 text-2xl font-semibold tracking-tight">{picked.name}</h1>
         <p className="mt-1 text-sm text-muted">Ingrese su PIN de 4 dígitos</p>
       </div>
