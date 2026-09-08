@@ -16,6 +16,7 @@ import { cartTotals, useCart } from "@/lib/pos/cart";
 import { CATEGORIES } from "@/lib/pos/types";
 import { formatColones, startOfCostaRicaDayIso } from "@/lib/money";
 import { playScanFeedback, unlockAudio } from "@/lib/pos/beep";
+import { useStaff } from "@/lib/pos/staff";
 import type { Product } from "@/lib/pos/types";
 
 export const Route = createFileRoute("/_shell/")({ component: CajaPage });
@@ -33,6 +34,7 @@ function CajaPage() {
   const addProduct = useCart((s) => s.addProduct);
   const addOpenAmount = useCart((s) => s.addOpenAmount);
   const items = useCart((s) => s.items);
+  const cashier = useStaff((s) => s.session?.name ?? "Caja");
   const { count, total } = cartTotals(items);
 
   const productsQuery = useQuery({
@@ -112,6 +114,7 @@ function CajaPage() {
               {settingsQuery.data?.storeName ?? "Dyko Intelligence"}
             </p>
             <h1 className="font-display text-2xl font-semibold tracking-tight">Caja</h1>
+            <p className="text-sm text-muted">Cobra {cashier}</p>
           </div>
           <p className="text-right text-sm text-muted">
             Hoy {todayQuery.data ? formatColones(todayQuery.data.total) : "—"}

@@ -1,5 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Clock3, ScanBarcode, Settings2, ShoppingBag } from "lucide-react";
+import { useStaff } from "@/lib/pos/staff";
 import { cn } from "@/lib/utils";
 
 const TABS = [
@@ -11,6 +12,7 @@ const TABS = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const session = useStaff((s) => s.session);
 
   return (
     <div className="min-h-dvh text-fg">
@@ -21,6 +23,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               Dyko Intelligence
             </span>
             <span className="text-sm text-muted">Caja móvil</span>
+            {session ? (
+              <span className="ml-2 rounded-full bg-fill px-2.5 py-0.5 text-xs font-medium text-fg">
+                {session.name}
+              </span>
+            ) : null}
           </div>
           <nav className="flex items-center gap-1 rounded-full bg-fill/80 p-1">
             {TABS.map((tab) => {

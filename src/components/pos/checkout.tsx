@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Keypad } from "@/components/pos/keypad";
 import { playSuccessFeedback } from "@/lib/pos/beep";
-import { getCashier } from "@/lib/pos/cashier";
+import { getEmployeeId } from "@/lib/pos/cashier";
 import { completeSale, getSettings } from "@/lib/pos/api";
 import { cartTotals, useCart } from "@/lib/pos/cart";
 import { queryClient } from "@/lib/query-client";
@@ -30,8 +30,10 @@ export function Checkout({ open, onClose }: { open: boolean; onClose: () => void
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => getSettings() });
 
   const mutation = useMutation({
-    mutationFn: (paymentMethod: PaymentMethod) =>
-      completeSale({
+    mutationFn: (paymentMethod: PaymentMethod) => {
+      const employeeId = getEmployeeId();
+      if (!employeeId) throw new Error("Inicie su turno para cobrar");
+      return completeSale({
         data: {
           items: items.map((item) => ({
             productId: item.productId,
@@ -42,9 +44,10 @@ export function Checkout({ open, onClose }: { open: boolean; onClose: () => void
           })),
           paymentMethod,
           tendered: paymentMethod === "cash" ? tendered : total,
-          cashier: getCashier(),
+          employeeId,
         },
-      }),
+      });
+    },
     onSuccess: (result) => {
       playSuccessFeedback();
       setSale(result);

@@ -176,11 +176,16 @@ export const completeSale = createServerFn({ method: "POST" })
       items: z.array(saleItemInput).min(1).max(80),
       paymentMethod: z.enum(["cash", "card", "sinpe"]),
       tendered: z.number().int().nonnegative(),
-      cashier: z.string().trim().min(1).max(40),
+      employeeId: z.number().int().positive(),
     }),
   )
   .handler(async ({ data }) => {
     const sql = await db();
+    const staff = await sql<{ name: string }>`
+      select name from employees where id = ${data.employeeId} and active = true limit 1
+    `;
+    if (!staff[0]) throw new Error("No hay un cajero activo en este teléfono");
+    const cashier = staff[0].name;
     const subtotal = data.items.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
     const total = subtotal;
     if (data.paymentMethod === "cash" && data.tendered < total) {
@@ -196,8 +201,8 @@ export const completeSale = createServerFn({ method: "POST" })
     const ticket = `DYK-${stamp}-${String(n + 1).padStart(4, "0")}`;
 
     const inserted = await sql<{ id: number; created_at: string }>`
-      insert into sales (ticket, subtotal, total, payment_method, tendered, change_due, cashier, status)
-      values (${ticket}, ${subtotal}, ${total}, ${data.paymentMethod}, ${tendered}, ${changeDue}, ${data.cashier}, 'completed')
+      insert into sales (ticket, subtotal, total, payment_method, tendered, change_due, cashier, employee_id, status)
+      values (${ticket}, ${subtotal}, ${total}, ${data.paymentMethod}, ${tendered}, ${changeDue}, ${cashier}, ${data.employeeId}, 'completed')
       returning id, created_at::text as created_at
     `;
     const saleId = inserted[0]!.id;
@@ -236,7 +241,7 @@ export const completeSale = createServerFn({ method: "POST" })
       paymentMethod: data.paymentMethod,
       tendered,
       changeDue,
-      cashier: data.cashier,
+      cashier,
       status: "completed",
       createdAt: inserted[0]!.created_at,
       itemCount: items.length,

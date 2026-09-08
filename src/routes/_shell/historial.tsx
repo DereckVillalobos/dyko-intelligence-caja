@@ -178,8 +178,7 @@ function SaleRow({ sale, onOpen }: { sale: SaleSummary; onOpen: () => void }) {
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[15px] font-medium">{sale.ticket}</span>
           <span className="text-sm text-muted">
-            {PAYMENT_LABEL[sale.paymentMethod]} · {formatTime(sale.createdAt)} · {sale.itemCount}{" "}
-            {sale.itemCount === 1 ? "ítem" : "ítems"}
+            {PAYMENT_LABEL[sale.paymentMethod]} · {sale.cashier} · {formatTime(sale.createdAt)}
           </span>
         </span>
         <span className="text-[15px] font-semibold tabular-nums">{formatColones(sale.total)}</span>

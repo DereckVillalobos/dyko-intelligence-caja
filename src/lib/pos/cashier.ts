@@ -1,10 +1,9 @@
-const KEY = "dyko.cashier";
+import { useStaff } from "./staff";
 
 export function getCashier(): string {
-  if (typeof window === "undefined") return "Caja 1";
-  return window.localStorage.getItem(KEY)?.trim() || "Caja 1";
+  return useStaff.getState().session?.name?.trim() || "Caja";
 }
 
-export function setCashier(name: string) {
-  window.localStorage.setItem(KEY, name.trim() || "Caja 1");
+export function getEmployeeId(): number | null {
+  return useStaff.getState().session?.employeeId ?? null;
 }
