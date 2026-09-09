@@ -10,13 +10,23 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ShellRouteImport } from './routes/_shell'
+import { Route as GerenteRouteImport } from './routes/gerente'
 import { Route as ShellIndexRouteImport } from './routes/_shell/index'
 import { Route as ShellAjustesRouteImport } from './routes/_shell/ajustes'
 import { Route as ShellHistorialRouteImport } from './routes/_shell/historial'
 import { Route as ShellProductosRouteImport } from './routes/_shell/productos'
+import { Route as GerenteIndexRouteImport } from './routes/gerente/index'
+import { Route as GerenteAjustesRouteImport } from './routes/gerente/ajustes'
+import { Route as GerenteEquipoRouteImport } from './routes/gerente/equipo'
+import { Route as GerenteVentasRouteImport } from './routes/gerente/ventas'
 
 const ShellRoute = ShellRouteImport.update({
   id: '/_shell',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GerenteRoute = GerenteRouteImport.update({
+  id: '/gerente',
+  path: '/gerente',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ShellIndexRoute = ShellIndexRouteImport.update({
@@ -39,43 +49,100 @@ const ShellProductosRoute = ShellProductosRouteImport.update({
   path: '/productos',
   getParentRoute: () => ShellRoute,
 } as any)
+const GerenteIndexRoute = GerenteIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => GerenteRoute,
+} as any)
+const GerenteAjustesRoute = GerenteAjustesRouteImport.update({
+  id: '/ajustes',
+  path: '/ajustes',
+  getParentRoute: () => GerenteRoute,
+} as any)
+const GerenteEquipoRoute = GerenteEquipoRouteImport.update({
+  id: '/equipo',
+  path: '/equipo',
+  getParentRoute: () => GerenteRoute,
+} as any)
+const GerenteVentasRoute = GerenteVentasRouteImport.update({
+  id: '/ventas',
+  path: '/ventas',
+  getParentRoute: () => GerenteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof ShellIndexRoute
+  '/gerente': typeof GerenteRouteWithChildren
   '/ajustes': typeof ShellAjustesRoute
   '/historial': typeof ShellHistorialRoute
   '/productos': typeof ShellProductosRoute
+  '/gerente/ajustes': typeof GerenteAjustesRoute
+  '/gerente/equipo': typeof GerenteEquipoRoute
+  '/gerente/ventas': typeof GerenteVentasRoute
+  '/gerente/': typeof GerenteIndexRoute
 }
 export interface FileRoutesByTo {
   '/ajustes': typeof ShellAjustesRoute
   '/historial': typeof ShellHistorialRoute
   '/productos': typeof ShellProductosRoute
+  '/gerente/ajustes': typeof GerenteAjustesRoute
+  '/gerente/equipo': typeof GerenteEquipoRoute
+  '/gerente/ventas': typeof GerenteVentasRoute
   '/': typeof ShellIndexRoute
+  '/gerente': typeof GerenteIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_shell': typeof ShellRouteWithChildren
+  '/gerente': typeof GerenteRouteWithChildren
   '/_shell/ajustes': typeof ShellAjustesRoute
   '/_shell/historial': typeof ShellHistorialRoute
   '/_shell/productos': typeof ShellProductosRoute
+  '/gerente/ajustes': typeof GerenteAjustesRoute
+  '/gerente/equipo': typeof GerenteEquipoRoute
+  '/gerente/ventas': typeof GerenteVentasRoute
   '/_shell/': typeof ShellIndexRoute
+  '/gerente/': typeof GerenteIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/ajustes' | '/historial' | '/productos'
+  fullPaths:
+    | '/'
+    | '/gerente'
+    | '/ajustes'
+    | '/historial'
+    | '/productos'
+    | '/gerente/ajustes'
+    | '/gerente/equipo'
+    | '/gerente/ventas'
+    | '/gerente/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/ajustes' | '/historial' | '/productos' | '/'
+  to:
+    | '/ajustes'
+    | '/historial'
+    | '/productos'
+    | '/gerente/ajustes'
+    | '/gerente/equipo'
+    | '/gerente/ventas'
+    | '/'
+    | '/gerente'
   id:
     | '__root__'
     | '/_shell'
+    | '/gerente'
     | '/_shell/ajustes'
     | '/_shell/historial'
     | '/_shell/productos'
+    | '/gerente/ajustes'
+    | '/gerente/equipo'
+    | '/gerente/ventas'
     | '/_shell/'
+    | '/gerente/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   ShellRoute: typeof ShellRouteWithChildren
+  GerenteRoute: typeof GerenteRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -85,6 +152,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof ShellRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/gerente': {
+      id: '/gerente'
+      path: '/gerente'
+      fullPath: '/gerente'
+      preLoaderRoute: typeof GerenteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_shell/': {
@@ -115,6 +189,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellProductosRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/gerente/': {
+      id: '/gerente/'
+      path: '/'
+      fullPath: '/gerente/'
+      preLoaderRoute: typeof GerenteIndexRouteImport
+      parentRoute: typeof GerenteRoute
+    }
+    '/gerente/ajustes': {
+      id: '/gerente/ajustes'
+      path: '/ajustes'
+      fullPath: '/gerente/ajustes'
+      preLoaderRoute: typeof GerenteAjustesRouteImport
+      parentRoute: typeof GerenteRoute
+    }
+    '/gerente/equipo': {
+      id: '/gerente/equipo'
+      path: '/equipo'
+      fullPath: '/gerente/equipo'
+      preLoaderRoute: typeof GerenteEquipoRouteImport
+      parentRoute: typeof GerenteRoute
+    }
+    '/gerente/ventas': {
+      id: '/gerente/ventas'
+      path: '/ventas'
+      fullPath: '/gerente/ventas'
+      preLoaderRoute: typeof GerenteVentasRouteImport
+      parentRoute: typeof GerenteRoute
+    }
   }
 }
 
@@ -134,8 +236,26 @@ const ShellRouteChildren: ShellRouteChildren = {
 
 const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)
 
+interface GerenteRouteChildren {
+  GerenteAjustesRoute: typeof GerenteAjustesRoute
+  GerenteEquipoRoute: typeof GerenteEquipoRoute
+  GerenteVentasRoute: typeof GerenteVentasRoute
+  GerenteIndexRoute: typeof GerenteIndexRoute
+}
+
+const GerenteRouteChildren: GerenteRouteChildren = {
+  GerenteAjustesRoute: GerenteAjustesRoute,
+  GerenteEquipoRoute: GerenteEquipoRoute,
+  GerenteVentasRoute: GerenteVentasRoute,
+  GerenteIndexRoute: GerenteIndexRoute,
+}
+
+const GerenteRouteWithChildren =
+  GerenteRoute._addFileChildren(GerenteRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   ShellRoute: ShellRouteWithChildren,
+  GerenteRoute: GerenteRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

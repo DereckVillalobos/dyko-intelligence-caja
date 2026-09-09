@@ -1,18 +1,32 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, Navigate, useRouterState } from "@tanstack/react-router";
 import { Clock3, ScanBarcode, Settings2, ShoppingBag } from "lucide-react";
-import { useStaff } from "@/lib/pos/staff";
+import { canSell, canStock, useStaff } from "@/lib/pos/staff";
 import { cn } from "@/lib/utils";
 
-const TABS = [
+const VENTAS_TABS = [
   { to: "/", label: "Caja", icon: ScanBarcode },
   { to: "/historial", label: "Historial", icon: Clock3 },
-  { to: "/productos", label: "Productos", icon: ShoppingBag },
+  { to: "/ajustes", label: "Ajustes", icon: Settings2 },
+] as const;
+
+const GONDO_TABS = [
+  { to: "/productos", label: "Inventario", icon: ShoppingBag },
   { to: "/ajustes", label: "Ajustes", icon: Settings2 },
 ] as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const session = useStaff((s) => s.session);
+  const role = session?.role;
+  const tabs = canStock(role ?? "pendiente") ? GONDO_TABS : VENTAS_TABS;
+  const cols = tabs.length === 2 ? "grid-cols-2" : "grid-cols-3";
+
+  if (role && canStock(role) && (pathname === "/" || pathname === "/historial")) {
+    return <Navigate to="/productos" />;
+  }
+  if (role && canSell(role) && pathname === "/productos") {
+    return <Navigate to="/" />;
+  }
 
   return (
     <div className="min-h-dvh text-fg">
@@ -22,7 +36,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="font-display text-[17px] font-semibold tracking-tight">
               Dyko Intelligence
             </span>
-            <span className="text-sm text-muted">Caja móvil</span>
+            <span className="text-sm text-muted">
+              {canStock(role ?? "pendiente") ? "Inventario" : "Caja móvil"}
+            </span>
             {session ? (
               <span className="ml-2 rounded-full bg-fill px-2.5 py-0.5 text-xs font-medium text-fg">
                 {session.name}
@@ -30,7 +46,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ) : null}
           </div>
           <nav className="flex items-center gap-1 rounded-full bg-fill/80 p-1">
-            {TABS.map((tab) => {
+            {tabs.map((tab) => {
               const active = pathname === tab.to;
               return (
                 <Link
@@ -53,8 +69,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:pb-0">{children}</div>
 
       <nav className="glass-bar specular fixed inset-x-0 bottom-0 z-40 border-t border-border/40 pb-[env(safe-area-inset-bottom)] lg:hidden">
-        <ul className="grid grid-cols-4 px-2 pt-1">
-          {TABS.map((tab) => {
+        <ul className={cn("grid px-2 pt-1", cols)}>
+          {tabs.map((tab) => {
             const active = pathname === tab.to;
             return (
               <li key={tab.to}>

@@ -1,3 +1,5 @@
+import type { StaffRole } from "./staff";
+
 export type PaymentMethod = "cash" | "card" | "sinpe";
 
 export type Product = {
@@ -59,6 +61,30 @@ export type TodaySummary = {
   cash: number;
   card: number;
   sinpe: number;
+};
+
+export type CashierStat = {
+  id: number;
+  name: string;
+  animal: string;
+  color: string;
+  role: StaffRole;
+  count: number;
+  total: number;
+};
+
+export type LowStockItem = {
+  id: number;
+  name: string;
+  stock: number;
+};
+
+export type ManagerOverview = {
+  today: TodaySummary;
+  cashiers: CashierStat[];
+  pendingCount: number;
+  teamCount: number;
+  lowStock: LowStockItem[];
 };
 
 export const PAYMENT_LABEL: Record<PaymentMethod, string> = {

@@ -1,16 +1,18 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Plus, ScanBarcode, Search, X } from "lucide-react";
+import { Minus, Plus, ScanBarcode, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Scanner } from "@/components/pos/scanner";
-import { createProduct, listProducts, updateProduct } from "@/lib/pos/api";
+import { adjustStock, createProduct, listProducts, lookupBarcode, updateProduct } from "@/lib/pos/api";
 import { formatColones } from "@/lib/money";
 import { queryClient } from "@/lib/query-client";
 import { CATEGORIES, type Product } from "@/lib/pos/types";
+import { useStaff } from "@/lib/pos/staff";
 import { cn } from "@/lib/utils";
+import { playScanFeedback } from "@/lib/pos/beep";
 
 export const Route = createFileRoute("/_shell/productos")({
   component: ProductosPage,
@@ -21,6 +23,8 @@ const CATS = CATEGORIES.filter((c) => c !== "Todos");
 function ProductosPage() {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<Product | "new" | null>(null);
+  const [scanOpen, setScanOpen] = useState(false);
+  const employeeId = useStaff((s) => s.session?.employeeId);
 
   const productsQuery = useQuery({
     queryKey: ["products"],
@@ -34,17 +38,49 @@ function ProductosPage() {
       (p) => p.name.toLowerCase().includes(q) || p.barcode.includes(q) || p.category.toLowerCase().includes(q),
     );
   }, [products, query]);
+  const low = products.filter((p) => p.stock <= 5).length;
+
+  async function onScanned(code: string) {
+    const local = products.find((p) => p.barcode === code);
+    if (local) {
+      playScanFeedback();
+      setEditing(local);
+      setScanOpen(false);
+      return;
+    }
+    try {
+      const found = await lookupBarcode({ data: { barcode: code } });
+      if (found) {
+        playScanFeedback();
+        setEditing(found);
+        setScanOpen(false);
+        return;
+      }
+    } catch {
+      /* fall through */
+    }
+    toast.message("No está en inventario. Créelo.");
+    setEditing("new");
+    setScanOpen(false);
+  }
 
   return (
     <main className="mx-auto max-w-lg px-4 py-5">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">Productos</h1>
-          <p className="mt-1 text-sm text-muted">Catálogo con código de barras y precio.</p>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Inventario</h1>
+          <p className="mt-1 text-sm text-muted">
+            Acomode y cuente. {low ? `${low} con poco stock.` : "Stock al día."}
+          </p>
         </div>
-        <Button size="icon" onClick={() => setEditing("new")} aria-label="Nuevo producto">
-          <Plus className="size-5" />
-        </Button>
+        <div className="flex gap-2">
+          <Button size="icon" variant="secondary" onClick={() => setScanOpen(true)} aria-label="Escanear">
+            <ScanBarcode className="size-5" />
+          </Button>
+          <Button size="icon" onClick={() => setEditing("new")} aria-label="Nuevo producto">
+            <Plus className="size-5" />
+          </Button>
+        </div>
       </div>
 
       <div className="relative mt-4">
@@ -83,7 +119,7 @@ function ProductosPage() {
                   <span className="block text-[15px] font-semibold tabular-nums">
                     {formatColones(product.price)}
                   </span>
-                  <span className={cn("text-xs", product.stock <= 0 ? "text-danger" : "text-muted")}>
+                  <span className={cn("text-xs", product.stock <= 0 ? "text-danger" : product.stock <= 5 ? "text-warning" : "text-muted")}>
                     Stock {product.stock}
                   </span>
                 </span>
@@ -96,18 +132,29 @@ function ProductosPage() {
       {editing ? (
         <ProductForm
           product={editing === "new" ? null : editing}
+          employeeId={employeeId}
           onClose={() => setEditing(null)}
         />
       ) : null}
+
+      <Scanner
+        open={scanOpen}
+        captureOnce
+        heading="Escanear inventario"
+        onClose={() => setScanOpen(false)}
+        onCode={(code) => void onScanned(code)}
+      />
     </main>
   );
 }
 
 function ProductForm({
   product,
+  employeeId,
   onClose,
 }: {
   product: Product | null;
+  employeeId?: number;
   onClose: () => void;
 }) {
   const [name, setName] = useState(product?.name ?? "");
@@ -116,6 +163,7 @@ function ProductForm({
   const [price, setPrice] = useState(product ? String(product.price) : "");
   const [stock, setStock] = useState(product ? String(product.stock) : "0");
   const [scanOpen, setScanOpen] = useState(false);
+  const [liveStock, setLiveStock] = useState(product?.stock ?? 0);
 
   const createMut = useMutation({
     mutationFn: () =>
@@ -155,13 +203,27 @@ function ProductForm({
     onError: (error: Error) => toast.error(error.message || "No se pudo actualizar"),
   });
 
+  const stockMut = useMutation({
+    mutationFn: (delta: number) =>
+      adjustStock({
+        data: { id: product!.id, delta, employeeId: employeeId! },
+      }),
+    onSuccess: (next) => {
+      setLiveStock(next.stock);
+      setStock(String(next.stock));
+      void queryClient.invalidateQueries({ queryKey: ["products"] });
+      playScanFeedback();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   const valid = name.trim().length >= 2 && Number(price) > 0 && (product || barcode.trim().length >= 3);
   const pending = createMut.isPending || updateMut.isPending;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-overlay sm:items-center">
       <form
-        className="glass-sheet w-full max-w-md space-y-3 rounded-t-3xl p-5 sm:rounded-3xl"
+        className="glass-sheet max-h-[90dvh] w-full max-w-md space-y-3 overflow-y-auto rounded-t-3xl p-5 sm:rounded-3xl"
         onSubmit={(e) => {
           e.preventDefault();
           if (!valid) return;
@@ -170,7 +232,7 @@ function ProductForm({
         }}
       >
         <div className="flex items-center justify-between">
-          <p className="text-[17px] font-semibold">{product ? "Editar producto" : "Nuevo producto"}</p>
+          <p className="text-[17px] font-semibold">{product ? product.name : "Nuevo producto"}</p>
           <button
             type="button"
             onClick={onClose}
@@ -180,6 +242,28 @@ function ProductForm({
             <X className="size-4" />
           </button>
         </div>
+
+        {product && employeeId ? (
+          <div className="rounded-2xl bg-fill px-4 py-3">
+            <p className="text-xs font-medium tracking-wide text-muted uppercase">Existencias</p>
+            <p className="mt-1 text-3xl font-semibold tabular-nums">{liveStock}</p>
+            <div className="mt-3 grid grid-cols-4 gap-2">
+              {[-1, 1, 5, 10].map((delta) => (
+                <Button
+                  key={delta}
+                  type="button"
+                  variant={delta < 0 ? "secondary" : "primary"}
+                  disabled={stockMut.isPending}
+                  onClick={() => stockMut.mutate(delta)}
+                >
+                  {delta < 0 ? <Minus className="size-4" /> : <Plus className="size-4" />}
+                  {Math.abs(delta)}
+                </Button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <label className="block space-y-1">
           <span className="text-sm font-medium">Nombre</span>
           <Input value={name} onChange={(e) => setName(e.target.value)} />
@@ -230,17 +314,19 @@ function ProductForm({
               onChange={(e) => setPrice(e.target.value.replace(/\D/g, ""))}
             />
           </label>
-          <label className="block space-y-1">
-            <span className="text-sm font-medium">Stock</span>
-            <Input
-              value={stock}
-              inputMode="numeric"
-              onChange={(e) => setStock(e.target.value.replace(/\D/g, ""))}
-            />
-          </label>
+          {product ? null : (
+            <label className="block space-y-1">
+              <span className="text-sm font-medium">Stock</span>
+              <Input
+                value={stock}
+                inputMode="numeric"
+                onChange={(e) => setStock(e.target.value.replace(/\D/g, ""))}
+              />
+            </label>
+          )}
         </div>
         <Button type="submit" className="w-full" disabled={!valid || pending}>
-          {pending ? "Guardando…" : "Guardar"}
+          {pending ? "Guardando…" : "Guardar ficha"}
         </Button>
       </form>
       <Scanner

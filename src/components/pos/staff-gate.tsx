@@ -1,19 +1,23 @@
 import { useEffect, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Building2, Plus, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AnimalAvatar } from "@/components/pos/animal-avatar";
 import { EmployeeForm, type EmployeeDraft } from "@/components/pos/employee-form";
 import { PinPad } from "@/components/pos/pin-pad";
+import { WaitingPost } from "@/components/pos/waiting-post";
 import {
   createEmployee,
   findBoundEmployee,
+  getEmployee,
   listEmployees,
   setupFirstEmployee,
   unlockEmployee,
   type PublicEmployee,
 } from "@/lib/pos/staff-api";
-import { getDeviceId, useStaff, type DeviceMode, type StaffSession } from "@/lib/pos/staff";
+import { toast } from "sonner";
+import { getDeviceId, roleLabel, useStaff, type DeviceMode, type StaffSession } from "@/lib/pos/staff";
 import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +33,35 @@ export function StaffGate({ children }: { children: React.ReactNode }) {
     queryKey: ["employees"],
     queryFn: () => listEmployees(),
   });
+
+  const meQuery = useQuery({
+    queryKey: ["me", session?.employeeId],
+    queryFn: () => getEmployee({ data: { id: session!.employeeId } }),
+    enabled: Boolean(session),
+    refetchInterval: 2500,
+  });
+
+  useEffect(() => {
+    const next = meQuery.data;
+    if (!session || !next) return;
+    if (
+      next.role !== session.role ||
+      next.name !== session.name ||
+      next.animal !== session.animal ||
+      next.color !== session.color
+    ) {
+      if (session.role === "pendiente" && next.role !== "pendiente") {
+        toast.success(`Te asignaron ${roleLabel(next.role)}`);
+      }
+      signIn({
+        employeeId: next.id,
+        name: next.name,
+        role: next.role,
+        animal: next.animal,
+        color: next.color,
+      });
+    }
+  }, [meQuery.data, session, signIn]);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,6 +124,7 @@ export function StaffGate({ children }: { children: React.ReactNode }) {
     );
   }
 
+  if (session?.role === "pendiente") return <WaitingPost />;
   if (session) return <>{children}</>;
 
   if (!mode) {
@@ -148,6 +182,12 @@ function ModePicker({ onPick }: { onPick: (mode: DeviceMode) => void }) {
       <Button className="mt-auto" size="lg" disabled={!choice} onClick={() => choice && onPick(choice)}>
         Continuar
       </Button>
+      <Link
+        to="/gerente"
+        className="mt-4 mb-[env(safe-area-inset-bottom)] text-center text-[15px] font-medium text-primary"
+      >
+        Soy el gerente
+      </Link>
     </div>
   );
 }
@@ -221,7 +261,7 @@ function FirstEmployee({
 
   return (
     <EmployeeForm
-      kicker="Responsable de esta caja"
+      kicker="Su perfil en el equipo"
       onBack={onBack}
       pending={mutation.isPending}
       error={error}
@@ -278,7 +318,7 @@ function LockScreen({
           {mode === "personal" ? "Vincular este teléfono" : "Turno"}
         </p>
         <h1 className="font-display mt-2 text-[28px] leading-tight font-semibold tracking-tight">
-          ¿Quién cobra?
+          ¿Quién trabaja?
         </h1>
         <p className="mt-2 text-[15px] text-muted">
           {mode === "personal"
@@ -311,9 +351,7 @@ function LockScreen({
                 />
                 <span className="min-w-0">
                   <span className="block truncate text-[17px] font-semibold">{person.name}</span>
-                  <span className="text-xs text-muted">
-                    {person.role === "admin" ? "Responsable" : "Cajero"}
-                  </span>
+                  <span className="text-xs text-muted">{roleLabel(person.role)}</span>
                 </span>
               </button>
             </li>

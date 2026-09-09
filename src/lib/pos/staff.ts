@@ -2,7 +2,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export type DeviceMode = "personal" | "shared";
-export type StaffRole = "admin" | "cajero";
+export type StaffRole = "gerente" | "pendiente" | "ventas" | "gondolero";
+export type JobRole = "ventas" | "gondolero";
 
 export type StaffSession = {
   employeeId: number;
@@ -21,6 +22,46 @@ type StaffState = {
 };
 
 const DEVICE_ID_KEY = "dyko.deviceId";
+
+export const JOBS: Array<{
+  role: JobRole;
+  title: string;
+  hint: string;
+}> = [
+  {
+    role: "ventas",
+    title: "Ventas",
+    hint: "Cobra, escanea y cierra las ventas del local.",
+  },
+  {
+    role: "gondolero",
+    title: "Gondolero",
+    hint: "Acomoda, controla inventario y existencias. Sin caja.",
+  },
+];
+
+export function normalizeRole(role: string | null | undefined): StaffRole {
+  if (role === "gerente") return "gerente";
+  if (role === "gondolero") return "gondolero";
+  if (role === "pendiente") return "pendiente";
+  if (role === "ventas" || role === "cajero" || role === "admin") return "ventas";
+  return "pendiente";
+}
+
+export function roleLabel(role: StaffRole): string {
+  if (role === "gerente") return "Gerente";
+  if (role === "gondolero") return "Gondolero";
+  if (role === "ventas") return "Ventas";
+  return "Sin puesto";
+}
+
+export function canSell(role: StaffRole) {
+  return role === "ventas";
+}
+
+export function canStock(role: StaffRole) {
+  return role === "gondolero";
+}
 
 export function getDeviceId(): string {
   if (typeof window === "undefined") return "";
@@ -42,5 +83,22 @@ export const useStaff = create<StaffState>()(
       signOut: () => set({ session: null }),
     }),
     { name: "dyko.staff", skipHydration: true },
+  ),
+);
+
+type GerenteState = {
+  session: StaffSession | null;
+  signIn: (session: StaffSession) => void;
+  signOut: () => void;
+};
+
+export const useGerente = create<GerenteState>()(
+  persist(
+    (set) => ({
+      session: null,
+      signIn: (session) => set({ session }),
+      signOut: () => set({ session: null }),
+    }),
+    { name: "dyko.gerente", skipHydration: true },
   ),
 );

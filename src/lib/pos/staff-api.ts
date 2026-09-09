@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { ANIMAL_KEYS, parseAnimal, parseColor } from "./avatar";
-import type { StaffRole } from "./staff";
+import { normalizeRole, type StaffRole } from "./staff";
 
 type Sql = Awaited<ReturnType<(typeof import("@/lib/db"))["getSql"]>>;
 
@@ -31,6 +31,7 @@ const colorSchema = z.enum([
   "cream",
   "sage",
 ]);
+const jobSchema = z.enum(["ventas", "gondolero"]);
 
 async function hashPin(pin: string, salt: string) {
   const { scryptSync } = await import("node:crypto");
@@ -58,7 +59,7 @@ function asPublic(row: EmployeeRow): PublicEmployee {
   return {
     id: row.id,
     name: row.name,
-    role: row.role === "admin" ? "admin" : "cajero",
+    role: normalizeRole(row.role),
     bound: Boolean(row.device_token),
     animal: parseAnimal(row.avatar_animal),
     color: parseColor(row.avatar_color),
@@ -69,7 +70,7 @@ function asSession(row: EmployeeRow) {
   return {
     employeeId: row.id,
     name: row.name,
-    role: (row.role === "admin" ? "admin" : "cajero") as StaffRole,
+    role: normalizeRole(row.role),
     animal: parseAnimal(row.avatar_animal),
     color: parseColor(row.avatar_color),
   };
@@ -80,11 +81,48 @@ export const listEmployees = createServerFn({ method: "GET" }).handler(async () 
   const rows = await sql<EmployeeRow>`
     select id, name, role, device_token, avatar_animal, avatar_color
     from employees
-    where active = true
+    where active = true and role <> 'gerente'
     order by name
   `;
   return rows.map(asPublic);
 });
+
+export const listGerentes = createServerFn({ method: "GET" }).handler(async () => {
+  const sql = await db();
+  const rows = await sql<EmployeeRow>`
+    select id, name, role, device_token, avatar_animal, avatar_color
+    from employees
+    where active = true and role = 'gerente'
+    order by name
+  `;
+  return rows.map(asPublic);
+});
+
+export const listTeam = createServerFn({ method: "GET" }).handler(async () => {
+  const sql = await db();
+  const rows = await sql<EmployeeRow>`
+    select id, name, role, device_token, avatar_animal, avatar_color
+    from employees
+    where active = true and role <> 'gerente'
+    order by
+      case when role = 'pendiente' then 0 else 1 end,
+      name
+  `;
+  return rows.map(asPublic);
+});
+
+export const getEmployee = createServerFn({ method: "POST" })
+  .validator(z.object({ id: z.number().int().positive() }))
+  .handler(async ({ data }) => {
+    const sql = await db();
+    const rows = await sql<EmployeeRow>`
+      select id, name, role, device_token, avatar_animal, avatar_color
+      from employees
+      where id = ${data.id} and active = true
+      limit 1
+    `;
+    return rows[0] ? asPublic(rows[0]) : null;
+  });
 
 export const findBoundEmployee = createServerFn({ method: "POST" })
   .validator(z.object({ deviceId: z.string().uuid() }))
@@ -189,12 +227,15 @@ export const setupFirstEmployee = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const sql = await db();
-    const [{ n }] = await sql<{ n: number }>`select count(*)::int as n from employees`;
+    const [{ n }] = await sql<{ n: number }>`
+      select count(*)::int as n from employees
+      where active = true and role <> 'gerente'
+    `;
     if (n > 0) {
       const existing = await sql<EmployeeRow>`
         select id, name, role, device_token, avatar_animal, avatar_color
         from employees
-        where active = true
+        where active = true and role <> 'gerente'
         order by id
         limit 1
       `;
@@ -207,7 +248,44 @@ export const setupFirstEmployee = createServerFn({ method: "POST" })
     const token = data.bind ? data.deviceId : null;
     const rows = await sql<EmployeeRow>`
       insert into employees (name, pin_hash, pin_salt, role, device_token, avatar_animal, avatar_color)
-      values (${data.name}, ${pinHash}, ${salt}, 'admin', ${token}, ${data.animal}, ${data.color})
+      values (${data.name}, ${pinHash}, ${salt}, 'pendiente', ${token}, ${data.animal}, ${data.color})
+      returning id, name, role, device_token, avatar_animal, avatar_color
+    `;
+    return asSession(rows[0]!);
+  });
+
+export const setupGerente = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      name: z.string().trim().min(2).max(40),
+      pin: pinSchema,
+      animal: animalSchema,
+      color: colorSchema,
+    }),
+  )
+  .handler(async ({ data }) => {
+    const sql = await db();
+    const [{ n }] = await sql<{ n: number }>`
+      select count(*)::int as n from employees
+      where active = true and role = 'gerente'
+    `;
+    if (n > 0) {
+      const existing = await sql<EmployeeRow>`
+        select id, name, role, device_token, avatar_animal, avatar_color
+        from employees
+        where active = true and role = 'gerente'
+        order by id
+        limit 1
+      `;
+      if (existing[0]) return asSession(existing[0]);
+      throw new Error("Ya hay un gerente");
+    }
+    const { randomBytes } = await import("node:crypto");
+    const salt = randomBytes(16).toString("hex");
+    const pinHash = await hashPin(data.pin, salt);
+    const rows = await sql<EmployeeRow>`
+      insert into employees (name, pin_hash, pin_salt, role, avatar_animal, avatar_color)
+      values (${data.name}, ${pinHash}, ${salt}, 'gerente', ${data.animal}, ${data.color})
       returning id, name, role, device_token, avatar_animal, avatar_color
     `;
     return asSession(rows[0]!);
@@ -225,21 +303,77 @@ export const createEmployee = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const sql = await db();
+    const { randomBytes } = await import("node:crypto");
+    const salt = randomBytes(16).toString("hex");
+    const pinHash = await hashPin(data.pin, salt);
+    const rows = await sql<EmployeeRow>`
+      insert into employees (name, pin_hash, pin_salt, role, avatar_animal, avatar_color)
+      values (${data.name}, ${pinHash}, ${salt}, 'pendiente', ${data.animal}, ${data.color})
+      returning id, name, role, device_token, avatar_animal, avatar_color
+    `;
+    return asPublic(rows[0]!);
+  });
+
+export const createGerente = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      name: z.string().trim().min(2).max(40),
+      pin: pinSchema,
+      animal: animalSchema,
+      color: colorSchema,
+      actorId: z.number().int().positive().optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const sql = await db();
     if (data.actorId) {
       const actor = await sql<{ role: string }>`
         select role from employees where id = ${data.actorId} and active = true limit 1
       `;
-      if (actor[0]?.role !== "admin") throw new Error("Solo un responsable puede agregar personal");
+      if (actor[0]?.role !== "gerente") throw new Error("Solo un gerente puede agregar otro gerente");
     }
     const { randomBytes } = await import("node:crypto");
     const salt = randomBytes(16).toString("hex");
     const pinHash = await hashPin(data.pin, salt);
     const rows = await sql<EmployeeRow>`
       insert into employees (name, pin_hash, pin_salt, role, avatar_animal, avatar_color)
-      values (${data.name}, ${pinHash}, ${salt}, 'cajero', ${data.animal}, ${data.color})
+      values (${data.name}, ${pinHash}, ${salt}, 'gerente', ${data.animal}, ${data.color})
       returning id, name, role, device_token, avatar_animal, avatar_color
     `;
     return asPublic(rows[0]!);
+  });
+
+export const assignPuesto = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      actorId: z.number().int().positive(),
+      employeeId: z.number().int().positive(),
+      role: jobSchema,
+    }),
+  )
+  .handler(async ({ data }) => {
+    const sql = await db();
+    const actor = await sql<{ role: string }>`
+      select role from employees where id = ${data.actorId} and active = true limit 1
+    `;
+    if (actor[0]?.role !== "gerente") throw new Error("Solo el gerente asigna puestos");
+    const target = await sql<EmployeeRow>`
+      select id, name, role, device_token, avatar_animal, avatar_color
+      from employees
+      where id = ${data.employeeId} and active = true
+      limit 1
+    `;
+    if (!target[0]) throw new Error("Trabajador no encontrado");
+    if (normalizeRole(target[0].role) === "gerente") {
+      throw new Error("No se puede cambiar el puesto de un gerente");
+    }
+    const updated = await sql<EmployeeRow>`
+      update employees
+      set role = ${data.role}
+      where id = ${data.employeeId}
+      returning id, name, role, device_token, avatar_animal, avatar_color
+    `;
+    return asPublic(updated[0]!);
   });
 
 export const unbindDevice = createServerFn({ method: "POST" })

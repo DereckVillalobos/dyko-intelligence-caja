@@ -2,7 +2,12 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { costaRicaStamp } from "@/lib/money";
 import { DEFAULT_SETTINGS, SEED_PRODUCTS } from "./catalog";
+import { parseAnimal, parseColor } from "./avatar";
+import { normalizeRole } from "./staff";
 import type {
+  CashierStat,
+  LowStockItem,
+  ManagerOverview,
   PaymentMethod,
   Product,
   SaleDetail,
@@ -181,10 +186,13 @@ export const completeSale = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const sql = await db();
-    const staff = await sql<{ name: string }>`
-      select name from employees where id = ${data.employeeId} and active = true limit 1
+    const staff = await sql<{ name: string; role: string }>`
+      select name, role from employees where id = ${data.employeeId} and active = true limit 1
     `;
     if (!staff[0]) throw new Error("No hay un cajero activo en este teléfono");
+    if (normalizeRole(staff[0].role) !== "ventas") {
+      throw new Error("Este puesto no puede cobrar. Espere a que el gerente le asigne Ventas.");
+    }
     const cashier = staff[0].name;
     const subtotal = data.items.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
     const total = subtotal;
@@ -422,4 +430,132 @@ export const saveSettings = createServerFn({ method: "POST" })
       `;
     }
     return data;
+  });
+
+export const adjustStock = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      id: z.number().int().positive(),
+      delta: z.number().int().min(-10_000).max(10_000),
+      employeeId: z.number().int().positive(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const sql = await db();
+    const actor = await sql<{ role: string }>`
+      select role from employees where id = ${data.employeeId} and active = true limit 1
+    `;
+    if (!actor[0] || normalizeRole(actor[0].role) !== "gondolero") {
+      throw new Error("Solo el gondolero ajusta inventario");
+    }
+    const rows = await sql<{
+      id: number;
+      barcode: string;
+      name: string;
+      category: string;
+      price: number;
+      stock: number;
+      active: boolean;
+    }>`
+      update products
+      set stock = greatest(0, stock + ${data.delta})
+      where id = ${data.id} and active = true
+      returning id, barcode, name, category, price, stock, active
+    `;
+    if (!rows[0]) throw new Error("Producto no encontrado");
+    return asProduct(rows[0]);
+  });
+
+export const getManagerOverview = createServerFn({ method: "POST" })
+  .validator(z.object({ since: z.string().min(10) }))
+  .handler(async ({ data }) => {
+    const sql = await db();
+    await ensureSeed(sql);
+
+    const pay = await sql<{ payment_method: string; n: number; total: number }>`
+      select payment_method, count(*)::int as n, coalesce(sum(total), 0)::int as total
+      from sales
+      where created_at >= ${data.since}::timestamptz and status = 'completed'
+      group by payment_method
+    `;
+    const today: TodaySummary = { count: 0, total: 0, cash: 0, card: 0, sinpe: 0 };
+    for (const row of pay) {
+      const amount = Number(row.total);
+      const count = Number(row.n);
+      today.count += count;
+      today.total += amount;
+      if (row.payment_method === "cash") today.cash = amount;
+      if (row.payment_method === "card") today.card = amount;
+      if (row.payment_method === "sinpe") today.sinpe = amount;
+    }
+
+    const cashiersRows = await sql<{
+      id: number;
+      name: string;
+      role: string;
+      avatar_animal: string | null;
+      avatar_color: string | null;
+      n: number;
+      total: number;
+    }>`
+      select
+        e.id,
+        e.name,
+        e.role,
+        e.avatar_animal,
+        e.avatar_color,
+        count(s.id)::int as n,
+        coalesce(sum(s.total), 0)::int as total
+      from employees e
+      left join sales s
+        on s.employee_id = e.id
+        and s.created_at >= ${data.since}::timestamptz
+        and s.status = 'completed'
+      where e.active = true
+        and e.role <> 'gerente'
+        and e.role <> 'pendiente'
+      group by e.id, e.name, e.role, e.avatar_animal, e.avatar_color
+      order by total desc, e.name
+    `;
+    const cashiers: CashierStat[] = cashiersRows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      animal: parseAnimal(row.avatar_animal),
+      color: parseColor(row.avatar_color),
+      role: normalizeRole(row.role),
+      count: Number(row.n),
+      total: Number(row.total),
+    }));
+
+    const [{ pendingCount }] = await sql<{ pendingCount: number }>`
+      select count(*)::int as "pendingCount"
+      from employees
+      where active = true and role = 'pendiente'
+    `;
+    const [{ teamCount }] = await sql<{ teamCount: number }>`
+      select count(*)::int as "teamCount"
+      from employees
+      where active = true and role <> 'gerente'
+    `;
+    const lowRows = await sql<{ id: number; name: string; stock: number }>`
+      select id, name, stock
+      from products
+      where active = true and stock <= 5
+      order by stock asc, name
+      limit 8
+    `;
+    const lowStock: LowStockItem[] = lowRows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      stock: Number(row.stock),
+    }));
+
+    const overview: ManagerOverview = {
+      today,
+      cashiers,
+      pendingCount: Number(pendingCount),
+      teamCount: Number(teamCount),
+      lowStock,
+    };
+    return overview;
   });

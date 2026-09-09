@@ -132,6 +132,20 @@
     background: var(--color-bg-elevated);
     box-shadow: var(--shadow-border);
   }
+
+  .dyko-breathe {
+    animation: dyko-breathe 2.6s ease-in-out infinite;
+  }
+}
+
+@keyframes dyko-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
