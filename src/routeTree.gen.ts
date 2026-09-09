@@ -9,20 +9,27 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as ShellRouteImport } from './routes/_shell'
+import { Route as IndexRouteImport } from './routes/index'
+import { Route as CajaRouteImport } from './routes/caja'
 import { Route as GerenteRouteImport } from './routes/gerente'
-import { Route as ShellIndexRouteImport } from './routes/_shell/index'
-import { Route as ShellAjustesRouteImport } from './routes/_shell/ajustes'
-import { Route as ShellHistorialRouteImport } from './routes/_shell/historial'
-import { Route as ShellProductosRouteImport } from './routes/_shell/productos'
+import { Route as CajaIndexRouteImport } from './routes/caja/index'
+import { Route as CajaAjustesRouteImport } from './routes/caja/ajustes'
+import { Route as CajaHistorialRouteImport } from './routes/caja/historial'
+import { Route as CajaProductosRouteImport } from './routes/caja/productos'
 import { Route as GerenteIndexRouteImport } from './routes/gerente/index'
 import { Route as GerenteAjustesRouteImport } from './routes/gerente/ajustes'
 import { Route as GerenteEquipoRouteImport } from './routes/gerente/equipo'
 import { Route as GerenteRendimientoRouteImport } from './routes/gerente/rendimiento'
 import { Route as GerenteVentasRouteImport } from './routes/gerente/ventas'
 
-const ShellRoute = ShellRouteImport.update({
-  id: '/_shell',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CajaRoute = CajaRouteImport.update({
+  id: '/caja',
+  path: '/caja',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GerenteRoute = GerenteRouteImport.update({
@@ -30,25 +37,25 @@ const GerenteRoute = GerenteRouteImport.update({
   path: '/gerente',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ShellIndexRoute = ShellIndexRouteImport.update({
+const CajaIndexRoute = CajaIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => ShellRoute,
+  getParentRoute: () => CajaRoute,
 } as any)
-const ShellAjustesRoute = ShellAjustesRouteImport.update({
+const CajaAjustesRoute = CajaAjustesRouteImport.update({
   id: '/ajustes',
   path: '/ajustes',
-  getParentRoute: () => ShellRoute,
+  getParentRoute: () => CajaRoute,
 } as any)
-const ShellHistorialRoute = ShellHistorialRouteImport.update({
+const CajaHistorialRoute = CajaHistorialRouteImport.update({
   id: '/historial',
   path: '/historial',
-  getParentRoute: () => ShellRoute,
+  getParentRoute: () => CajaRoute,
 } as any)
-const ShellProductosRoute = ShellProductosRouteImport.update({
+const CajaProductosRoute = CajaProductosRouteImport.update({
   id: '/productos',
   path: '/productos',
-  getParentRoute: () => ShellRoute,
+  getParentRoute: () => CajaRoute,
 } as any)
 const GerenteIndexRoute = GerenteIndexRouteImport.update({
   id: '/',
@@ -77,93 +84,109 @@ const GerenteVentasRoute = GerenteVentasRouteImport.update({
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof ShellIndexRoute
+  '/': typeof IndexRoute
+  '/caja': typeof CajaRouteWithChildren
   '/gerente': typeof GerenteRouteWithChildren
-  '/ajustes': typeof ShellAjustesRoute
-  '/historial': typeof ShellHistorialRoute
-  '/productos': typeof ShellProductosRoute
+  '/caja/ajustes': typeof CajaAjustesRoute
+  '/caja/historial': typeof CajaHistorialRoute
+  '/caja/productos': typeof CajaProductosRoute
   '/gerente/ajustes': typeof GerenteAjustesRoute
   '/gerente/equipo': typeof GerenteEquipoRoute
   '/gerente/rendimiento': typeof GerenteRendimientoRoute
   '/gerente/ventas': typeof GerenteVentasRoute
+  '/caja/': typeof CajaIndexRoute
   '/gerente/': typeof GerenteIndexRoute
 }
 export interface FileRoutesByTo {
-  '/ajustes': typeof ShellAjustesRoute
-  '/historial': typeof ShellHistorialRoute
-  '/productos': typeof ShellProductosRoute
+  '/': typeof IndexRoute
+  '/caja/ajustes': typeof CajaAjustesRoute
+  '/caja/historial': typeof CajaHistorialRoute
+  '/caja/productos': typeof CajaProductosRoute
   '/gerente/ajustes': typeof GerenteAjustesRoute
   '/gerente/equipo': typeof GerenteEquipoRoute
   '/gerente/rendimiento': typeof GerenteRendimientoRoute
   '/gerente/ventas': typeof GerenteVentasRoute
-  '/': typeof ShellIndexRoute
+  '/caja': typeof CajaIndexRoute
   '/gerente': typeof GerenteIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/_shell': typeof ShellRouteWithChildren
+  '/': typeof IndexRoute
+  '/caja': typeof CajaRouteWithChildren
   '/gerente': typeof GerenteRouteWithChildren
-  '/_shell/ajustes': typeof ShellAjustesRoute
-  '/_shell/historial': typeof ShellHistorialRoute
-  '/_shell/productos': typeof ShellProductosRoute
+  '/caja/ajustes': typeof CajaAjustesRoute
+  '/caja/historial': typeof CajaHistorialRoute
+  '/caja/productos': typeof CajaProductosRoute
   '/gerente/ajustes': typeof GerenteAjustesRoute
   '/gerente/equipo': typeof GerenteEquipoRoute
   '/gerente/rendimiento': typeof GerenteRendimientoRoute
   '/gerente/ventas': typeof GerenteVentasRoute
-  '/_shell/': typeof ShellIndexRoute
+  '/caja/': typeof CajaIndexRoute
   '/gerente/': typeof GerenteIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/caja'
     | '/gerente'
-    | '/ajustes'
-    | '/historial'
-    | '/productos'
+    | '/caja/ajustes'
+    | '/caja/historial'
+    | '/caja/productos'
     | '/gerente/ajustes'
     | '/gerente/equipo'
     | '/gerente/rendimiento'
     | '/gerente/ventas'
+    | '/caja/'
     | '/gerente/'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/ajustes'
-    | '/historial'
-    | '/productos'
+    | '/'
+    | '/caja/ajustes'
+    | '/caja/historial'
+    | '/caja/productos'
     | '/gerente/ajustes'
     | '/gerente/equipo'
     | '/gerente/rendimiento'
     | '/gerente/ventas'
-    | '/'
+    | '/caja'
     | '/gerente'
   id:
     | '__root__'
-    | '/_shell'
+    | '/'
+    | '/caja'
     | '/gerente'
-    | '/_shell/ajustes'
-    | '/_shell/historial'
-    | '/_shell/productos'
+    | '/caja/ajustes'
+    | '/caja/historial'
+    | '/caja/productos'
     | '/gerente/ajustes'
     | '/gerente/equipo'
     | '/gerente/rendimiento'
     | '/gerente/ventas'
-    | '/_shell/'
+    | '/caja/'
     | '/gerente/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  ShellRoute: typeof ShellRouteWithChildren
+  IndexRoute: typeof IndexRoute
+  CajaRoute: typeof CajaRouteWithChildren
   GerenteRoute: typeof GerenteRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/_shell': {
-      id: '/_shell'
-      path: ''
+    '/': {
+      id: '/'
+      path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof ShellRouteImport
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/caja': {
+      id: '/caja'
+      path: '/caja'
+      fullPath: '/caja'
+      preLoaderRoute: typeof CajaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/gerente': {
@@ -173,33 +196,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GerenteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_shell/': {
-      id: '/_shell/'
+    '/caja/': {
+      id: '/caja/'
       path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof ShellIndexRouteImport
-      parentRoute: typeof ShellRoute
+      fullPath: '/caja/'
+      preLoaderRoute: typeof CajaIndexRouteImport
+      parentRoute: typeof CajaRoute
     }
-    '/_shell/ajustes': {
-      id: '/_shell/ajustes'
+    '/caja/ajustes': {
+      id: '/caja/ajustes'
       path: '/ajustes'
-      fullPath: '/ajustes'
-      preLoaderRoute: typeof ShellAjustesRouteImport
-      parentRoute: typeof ShellRoute
+      fullPath: '/caja/ajustes'
+      preLoaderRoute: typeof CajaAjustesRouteImport
+      parentRoute: typeof CajaRoute
     }
-    '/_shell/historial': {
-      id: '/_shell/historial'
+    '/caja/historial': {
+      id: '/caja/historial'
       path: '/historial'
-      fullPath: '/historial'
-      preLoaderRoute: typeof ShellHistorialRouteImport
-      parentRoute: typeof ShellRoute
+      fullPath: '/caja/historial'
+      preLoaderRoute: typeof CajaHistorialRouteImport
+      parentRoute: typeof CajaRoute
     }
-    '/_shell/productos': {
-      id: '/_shell/productos'
+    '/caja/productos': {
+      id: '/caja/productos'
       path: '/productos'
-      fullPath: '/productos'
-      preLoaderRoute: typeof ShellProductosRouteImport
-      parentRoute: typeof ShellRoute
+      fullPath: '/caja/productos'
+      preLoaderRoute: typeof CajaProductosRouteImport
+      parentRoute: typeof CajaRoute
     }
     '/gerente/': {
       id: '/gerente/'
@@ -239,21 +262,21 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface ShellRouteChildren {
-  ShellAjustesRoute: typeof ShellAjustesRoute
-  ShellHistorialRoute: typeof ShellHistorialRoute
-  ShellProductosRoute: typeof ShellProductosRoute
-  ShellIndexRoute: typeof ShellIndexRoute
+interface CajaRouteChildren {
+  CajaAjustesRoute: typeof CajaAjustesRoute
+  CajaHistorialRoute: typeof CajaHistorialRoute
+  CajaProductosRoute: typeof CajaProductosRoute
+  CajaIndexRoute: typeof CajaIndexRoute
 }
 
-const ShellRouteChildren: ShellRouteChildren = {
-  ShellAjustesRoute: ShellAjustesRoute,
-  ShellHistorialRoute: ShellHistorialRoute,
-  ShellProductosRoute: ShellProductosRoute,
-  ShellIndexRoute: ShellIndexRoute,
+const CajaRouteChildren: CajaRouteChildren = {
+  CajaAjustesRoute: CajaAjustesRoute,
+  CajaHistorialRoute: CajaHistorialRoute,
+  CajaProductosRoute: CajaProductosRoute,
+  CajaIndexRoute: CajaIndexRoute,
 }
 
-const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)
+const CajaRouteWithChildren = CajaRoute._addFileChildren(CajaRouteChildren)
 
 interface GerenteRouteChildren {
   GerenteAjustesRoute: typeof GerenteAjustesRoute
@@ -275,7 +298,8 @@ const GerenteRouteWithChildren =
   GerenteRoute._addFileChildren(GerenteRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
-  ShellRoute: ShellRouteWithChildren,
+  IndexRoute: IndexRoute,
+  CajaRoute: CajaRouteWithChildren,
   GerenteRoute: GerenteRouteWithChildren,
 }
 export const routeTree = rootRouteImport

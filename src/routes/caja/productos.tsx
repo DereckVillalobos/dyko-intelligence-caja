@@ -14,7 +14,7 @@ import { useStaff } from "@/lib/pos/staff";
 import { cn } from "@/lib/utils";
 import { playScanFeedback } from "@/lib/pos/beep";
 
-export const Route = createFileRoute("/_shell/productos")({
+export const Route = createFileRoute("/caja/productos")({
   component: ProductosPage,
 });
 

@@ -20,7 +20,7 @@ import { AnimalAvatar } from "@/components/pos/animal-avatar";
 import { useStaff } from "@/lib/pos/staff";
 import type { Product } from "@/lib/pos/types";
 
-export const Route = createFileRoute("/_shell/")({ component: CajaPage });
+export const Route = createFileRoute("/caja/")({ component: CajaPage });
 
 function CajaPage() {
   const [query, setQuery] = useState("");

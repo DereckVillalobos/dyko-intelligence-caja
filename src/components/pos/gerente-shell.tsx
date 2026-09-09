@@ -32,7 +32,10 @@ export function GerenteShell({ children }: { children: React.ReactNode }) {
           </div>
           <nav className="flex items-center gap-1 rounded-full bg-fill/80 p-1">
             {TABS.map((tab) => {
-              const active = pathname === tab.to;
+              const active =
+                tab.to === "/gerente"
+                  ? pathname === "/gerente" || pathname === "/gerente/"
+                  : pathname === tab.to;
               return (
                 <Link
                   key={tab.to}

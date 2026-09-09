@@ -55,6 +55,7 @@ export type StoreSettings = {
   sinpeHolder: string;
   dailyGoal: number;
   cashFloat: number;
+  storeCode: string;
 };
 
 export type TodaySummary = {

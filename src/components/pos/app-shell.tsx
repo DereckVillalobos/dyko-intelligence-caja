@@ -4,14 +4,14 @@ import { canSell, canStock, useStaff } from "@/lib/pos/staff";
 import { cn } from "@/lib/utils";
 
 const VENTAS_TABS = [
-  { to: "/", label: "Caja", icon: ScanBarcode },
-  { to: "/historial", label: "Historial", icon: Clock3 },
-  { to: "/ajustes", label: "Ajustes", icon: Settings2 },
+  { to: "/caja", label: "Caja", icon: ScanBarcode },
+  { to: "/caja/historial", label: "Historial", icon: Clock3 },
+  { to: "/caja/ajustes", label: "Ajustes", icon: Settings2 },
 ] as const;
 
 const GONDO_TABS = [
-  { to: "/productos", label: "Inventario", icon: ShoppingBag },
-  { to: "/ajustes", label: "Ajustes", icon: Settings2 },
+  { to: "/caja/productos", label: "Inventario", icon: ShoppingBag },
+  { to: "/caja/ajustes", label: "Ajustes", icon: Settings2 },
 ] as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -21,11 +21,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const tabs = canStock(role ?? "pendiente") ? GONDO_TABS : VENTAS_TABS;
   const cols = tabs.length === 2 ? "grid-cols-2" : "grid-cols-3";
 
-  if (role && canStock(role) && (pathname === "/" || pathname === "/historial")) {
-    return <Navigate to="/productos" />;
+  if (role && canStock(role) && (pathname === "/caja" || pathname === "/caja/" || pathname === "/caja/historial")) {
+    return <Navigate to="/caja/productos" />;
   }
-  if (role && canSell(role) && pathname === "/productos") {
-    return <Navigate to="/" />;
+  if (role && canSell(role) && pathname === "/caja/productos") {
+    return <Navigate to="/caja" />;
   }
 
   return (
@@ -47,7 +47,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <nav className="flex items-center gap-1 rounded-full bg-fill/80 p-1">
             {tabs.map((tab) => {
-              const active = pathname === tab.to;
+              const active =
+                tab.to === "/caja"
+                  ? pathname === "/caja" || pathname === "/caja/"
+                  : pathname === tab.to;
               return (
                 <Link
                   key={tab.to}

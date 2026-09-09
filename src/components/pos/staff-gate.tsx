@@ -192,10 +192,10 @@ function ModePicker({ onPick }: { onPick: (mode: DeviceMode) => void }) {
         Continuar
       </Button>
       <Link
-        to="/gerente"
-        className="mt-4 mb-[env(safe-area-inset-bottom)] text-center text-[15px] font-medium text-primary"
+        to="/"
+        className="mt-4 mb-[env(safe-area-inset-bottom)] text-center text-[15px] font-medium text-muted"
       >
-        Soy el gerente
+        Cambiar de app
       </Link>
     </div>
   );

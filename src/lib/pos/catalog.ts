@@ -31,4 +31,5 @@ export const DEFAULT_SETTINGS = {
   sinpeHolder: "Dyko Intelligence",
   dailyGoal: 0,
   cashFloat: 0,
+  storeCode: "",
 };

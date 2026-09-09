@@ -7,7 +7,7 @@ import { formatColones, formatDateTime, formatTime, startOfCostaRicaDayIso } fro
 import { PAYMENT_LABEL, type PaymentMethod, type SaleSummary } from "@/lib/pos/types";
 import { cn } from "@/lib/utils";
 
-export const Route = createFileRoute("/_shell/historial")({
+export const Route = createFileRoute("/caja/historial")({
   component: HistorialPage,
 });
 

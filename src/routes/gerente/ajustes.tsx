@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AnimalAvatar } from "@/components/pos/animal-avatar";
+import { SyncMark } from "@/components/pos/sync-mark";
 import { getSettings, saveSettings } from "@/lib/pos/api";
 import { useGerente } from "@/lib/pos/staff";
 import { queryClient } from "@/lib/query-client";
@@ -111,12 +112,7 @@ function GerenteAjustes() {
         {mutation.isPending ? "Guardando…" : "Guardar cambios"}
       </Button>
 
-      <Link
-        to="/"
-        className="mt-6 block text-center text-[15px] font-medium text-primary"
-      >
-        Abrir caja de empleados
-      </Link>
+      <SyncMark side="gerente" />
     </main>
   );
 }

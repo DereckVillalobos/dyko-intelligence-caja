@@ -188,8 +188,8 @@ function GerenteLock({
             <Plus className="size-4" />
             Agregar gerente
           </Button>
-          <Link to="/" className="block text-center text-[15px] font-medium text-primary">
-            Ir a la caja de empleados
+          <Link to="/" className="block text-center text-[15px] font-medium text-muted">
+            Cambiar de app
           </Link>
         </div>
       </div>

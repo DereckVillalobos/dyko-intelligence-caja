@@ -1,12 +1,13 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { AnimalAvatar } from "@/components/pos/animal-avatar";
+import { SyncMark } from "@/components/pos/sync-mark";
 import { getSettings } from "@/lib/pos/api";
 import { getDeviceId, roleLabel, useStaff } from "@/lib/pos/staff";
 import { unbindDevice } from "@/lib/pos/staff-api";
 
-export const Route = createFileRoute("/_shell/ajustes")({
+export const Route = createFileRoute("/caja/ajustes")({
   component: AjustesPage,
 });
 
@@ -91,12 +92,7 @@ function AjustesPage() {
         </p>
       )}
 
-      <Link
-        to="/gerente"
-        className="mt-6 block text-center text-[15px] font-medium text-primary"
-      >
-        Abrir app del gerente
-      </Link>
+      <SyncMark side="caja" />
     </main>
   );
 }

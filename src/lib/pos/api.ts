@@ -54,6 +54,16 @@ async function ensureSeed(sql: Sql) {
       ('cashFloat', ${String(DEFAULT_SETTINGS.cashFloat)})
     on conflict (key) do nothing
   `;
+  const codeRows = await sql<{ value: string }>`
+    select value from store_settings where key = 'storeCode' limit 1
+  `;
+  if (!codeRows[0]?.value) {
+    const code = `DYKO-${String(1000 + Math.floor(Math.random() * 9000))}`;
+    await sql`
+      insert into store_settings (key, value) values ('storeCode', ${code})
+      on conflict (key) do nothing
+    `;
+  }
 }
 
 function asProduct(row: {
@@ -500,6 +510,7 @@ export const getSettings = createServerFn({ method: "GET" }).handler(async () =>
     sinpeHolder: map.sinpeHolder ?? DEFAULT_SETTINGS.sinpeHolder,
     dailyGoal: Number(map.dailyGoal ?? DEFAULT_SETTINGS.dailyGoal) || 0,
     cashFloat: Number(map.cashFloat ?? DEFAULT_SETTINGS.cashFloat) || 0,
+    storeCode: map.storeCode ?? "",
   };
   return settings;
 });
