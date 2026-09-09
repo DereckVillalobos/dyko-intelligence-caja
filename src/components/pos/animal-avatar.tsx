@@ -8,7 +8,7 @@ export function AnimalMark({ animal, className }: { animal: string; className?: 
   const kind = parseAnimal(animal);
   return (
     <img
-      src={`/animals/${kind}.png?v=2`}
+      src={`/animals/${kind}.png?v=3`}
       alt=""
       draggable={false}
       className={cn("size-full object-contain", className)}
