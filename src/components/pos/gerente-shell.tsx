@@ -7,7 +7,7 @@ const TABS = [
   { to: "/gerente", label: "Hoy", icon: LayoutDashboard },
   { to: "/gerente/equipo", label: "Equipo", icon: Users },
   { to: "/gerente/rendimiento", label: "Avance", icon: Activity },
-  { to: "/gerente/ventas", label: "Ventas", icon: ShoppingBag },
+  { to: "/gerente/ventas", label: "Semana", icon: ShoppingBag },
   { to: "/gerente/ajustes", label: "Ajustes", icon: Settings2 },
 ] as const;
 

@@ -1,147 +1,213 @@
-import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, X } from "lucide-react";
-import { getSale, getTodaySummary, listSales } from "@/lib/pos/api";
-import { formatColones, formatDateTime, formatTime, startOfCostaRicaDayIso } from "@/lib/money";
-import { PAYMENT_LABEL, type PaymentMethod } from "@/lib/pos/types";
+import { AnimalAvatar } from "@/components/pos/animal-avatar";
+import { getWeeklyDashboard } from "@/lib/pos/api";
+import { formatColones, formatHour } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/gerente/ventas")({
-  component: GerenteVentas,
+  component: SemanaPage,
 });
 
-const FILTERS: Array<{ id: "all" | PaymentMethod; label: string }> = [
-  { id: "all", label: "Todas" },
-  { id: "cash", label: "Efectivo" },
-  { id: "card", label: "Tarjeta" },
-  { id: "sinpe", label: "SINPE" },
-];
-
-function GerenteVentas() {
-  const [filter, setFilter] = useState<"all" | PaymentMethod>("all");
-  const [openId, setOpenId] = useState<number | null>(null);
-
-  const salesQuery = useQuery({ queryKey: ["sales"], queryFn: () => listSales() });
-  const todayQuery = useQuery({
-    queryKey: ["today"],
-    queryFn: () => getTodaySummary({ data: { since: startOfCostaRicaDayIso() } }),
+function SemanaPage() {
+  const query = useQuery({
+    queryKey: ["weekly"],
+    queryFn: () => getWeeklyDashboard(),
+    refetchInterval: 8000,
   });
-  const detailQuery = useQuery({
-    queryKey: ["sale", openId],
-    queryFn: () => getSale({ data: { id: openId! } }),
-    enabled: openId !== null,
-  });
-
-  const sales = salesQuery.data ?? [];
-  const visible = useMemo(
-    () => (filter === "all" ? sales : sales.filter((s) => s.paymentMethod === filter)),
-    [sales, filter],
-  );
-  const today = todayQuery.data;
-  const detail = detailQuery.data;
+  const data = query.data;
+  const week = data?.thisWeek;
+  const last = data?.lastWeek;
+  const maxBar = Math.max(1, ...(data?.days.map((d) => d.total) ?? [0]));
+  const delta = data?.deltaPct;
+  const up = (delta ?? 0) > 0;
+  const down = (delta ?? 0) < 0;
 
   return (
     <main className="mx-auto max-w-lg px-4 py-5">
-      <h1 className="font-display text-2xl font-semibold tracking-tight">Ventas</h1>
-      <p className="mt-1 text-sm text-muted">Registro completo del local.</p>
+      <p className="text-xs font-medium tracking-wide text-muted uppercase">Semana</p>
+      <h1 className="font-display text-2xl font-semibold tracking-tight">Rendimiento</h1>
+      <p className="mt-1 text-sm text-muted">
+        {data?.weekLabel ?? "Esta semana"} · comparado con la anterior.
+      </p>
 
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <div className="ios-list rounded-2xl px-4 py-3">
-          <p className="text-xs text-muted">Hoy</p>
-          <p className="mt-1 text-[17px] font-semibold tabular-nums">{today?.count ?? 0}</p>
-        </div>
-        <div className="ios-list rounded-2xl px-4 py-3">
-          <p className="text-xs text-muted">Total</p>
-          <p className="mt-1 text-[17px] font-semibold tabular-nums">
-            {formatColones(today?.total ?? 0)}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-5 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
-        {FILTERS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setFilter(item.id)}
+      <div className="ios-list mt-4 rounded-2xl px-4 py-4">
+        <p className="text-xs text-muted">Cobrado esta semana</p>
+        <p className="mt-1 font-display text-3xl font-semibold tabular-nums tracking-tight">
+          {formatColones(week?.total ?? 0)}
+        </p>
+        <p className="mt-1 text-sm">
+          <span
             className={cn(
-              "h-8 shrink-0 rounded-full px-3.5 text-sm font-medium",
-              filter === item.id ? "bg-fg text-primary-fg" : "bg-fill text-muted",
+              "font-medium",
+              up && "text-success",
+              down && "text-danger",
+              !up && !down && "text-muted",
             )}
           >
-            {item.label}
-          </button>
-        ))}
+            {delta == null
+              ? "Sin semana anterior para comparar"
+              : `${delta > 0 ? "+" : ""}${delta}% vs semana pasada`}
+          </span>
+          <span className="text-muted"> · {week?.count ?? 0} tickets</span>
+        </p>
       </div>
 
-      <ul className="ios-list mt-4 divide-y divide-border overflow-hidden rounded-2xl">
-        {visible.map((sale) => (
-          <li key={sale.id}>
-            <button
-              type="button"
-              onClick={() => setOpenId(sale.id)}
-              className="flex w-full items-center gap-3 px-4 py-3 text-left"
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[15px] font-medium">{sale.ticket}</span>
-                <span className="text-xs text-muted">
-                  {formatTime(sale.createdAt)} · {sale.cashier} · {PAYMENT_LABEL[sale.paymentMethod]}
-                </span>
-              </span>
-              <span className="text-[15px] font-semibold tabular-nums">
-                {formatColones(sale.total)}
-              </span>
-              <ChevronRight className="size-4 text-subtle" />
-            </button>
-          </li>
-        ))}
-      </ul>
-      {visible.length === 0 ? (
-        <p className="mt-6 text-center text-sm text-muted">No hay ventas con ese filtro.</p>
-      ) : null}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Stat label="Ticket medio" value={formatColones(week?.avgTicket ?? 0)} />
+        <Stat label="Promedio / día" value={formatColones(data?.perDay ?? 0)} />
+        <Stat
+          label="Mejor día"
+          value={data?.bestDay ? `${data.bestDay.label} · ${formatColones(data.bestDay.total)}` : "—"}
+        />
+        <Stat
+          label="Hora pico"
+          value={data?.peakHour ? `${formatHour(data.peakHour.hour)} · ${data.peakHour.count}` : "—"}
+        />
+      </div>
 
-      {openId ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-overlay sm:items-center">
-          <div className="glass-sheet max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-t-3xl p-5 sm:rounded-3xl">
-            <div className="flex items-center justify-between">
-              <p className="text-[17px] font-semibold">{detail?.ticket ?? "Venta"}</p>
-              <button
-                type="button"
-                onClick={() => setOpenId(null)}
-                className="flex size-9 items-center justify-center rounded-full bg-fill"
-                aria-label="Cerrar"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-            {detail ? (
-              <div className="mt-3 space-y-3">
-                <p className="text-sm text-muted">
-                  {formatDateTime(detail.createdAt)} · {detail.cashier} ·{" "}
-                  {PAYMENT_LABEL[detail.paymentMethod]}
-                </p>
-                <ul className="divide-y divide-border">
-                  {detail.items.map((item) => (
-                    <li key={item.id} className="flex justify-between py-2 text-[15px]">
-                      <span>
-                        {item.qty} × {item.name}
-                      </span>
-                      <span className="tabular-nums">{formatColones(item.lineTotal)}</span>
-                    </li>
-                  ))}
-                </ul>
-                <p className="flex justify-between text-[17px] font-semibold">
-                  <span>Total</span>
-                  <span className="tabular-nums">{formatColones(detail.total)}</span>
-                </p>
+      <section className="mt-6">
+        <p className="mb-2 px-1 text-xs font-medium tracking-wide text-muted uppercase">
+          Ventas por día
+        </p>
+        <div className="ios-list rounded-2xl px-4 py-4">
+          <div className="flex h-28 items-end gap-2">
+            {(data?.days ?? []).map((day) => (
+              <div key={day.key} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
+                <div className="flex h-20 w-full items-end justify-center">
+                  <div
+                    className="w-full max-w-7 rounded-full bg-primary"
+                    style={{ height: `${Math.max(6, (day.total / maxBar) * 100)}%` }}
+                  />
+                </div>
+                <span className="text-[11px] font-medium text-muted">{day.label}</span>
               </div>
-            ) : (
-              <p className="mt-4 text-sm text-muted">Cargando…</p>
-            )}
+            ))}
           </div>
+          {!(data?.thisWeek.total) ? (
+            <p className="mt-3 text-center text-xs text-muted">Aún no hay ventas esta semana.</p>
+          ) : null}
         </div>
+      </section>
+
+      <section className="mt-6">
+        <p className="mb-2 px-1 text-xs font-medium tracking-wide text-muted uppercase">
+          Cómo pagan
+        </p>
+        <div className="ios-list space-y-3 rounded-2xl px-4 py-4">
+          <MixRow label="Efectivo" pct={data?.mix.cash ?? 0} amount={week?.cash ?? 0} tone="bg-cash" />
+          <MixRow label="Tarjeta" pct={data?.mix.card ?? 0} amount={week?.card ?? 0} tone="bg-card" />
+          <MixRow label="SINPE" pct={data?.mix.sinpe ?? 0} amount={week?.sinpe ?? 0} tone="bg-sinpe" />
+        </div>
+      </section>
+
+      <section className="mt-6">
+        <p className="mb-2 px-1 text-xs font-medium tracking-wide text-muted uppercase">
+          Eficiencia de ventas
+        </p>
+        {data?.ventas.length ? (
+          <ul className="ios-list divide-y divide-border overflow-hidden rounded-2xl">
+            {data.ventas.map((person, i) => {
+              const share = week?.total ? Math.round((person.total / week.total) * 100) : 0;
+              return (
+                <li key={person.id} className="flex items-center gap-3 px-4 py-3">
+                  <AnimalAvatar name={person.name} animal={person.animal} color={person.color} size="sm" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[15px] font-medium">
+                      {person.name}
+                      {i === 0 && person.total > 0 ? (
+                        <span className="ml-2 text-xs font-medium text-success">Lidera</span>
+                      ) : null}
+                    </span>
+                    <span className="text-xs text-muted">
+                      {person.count} ventas · {share}% de la semana · ticket {formatColones(person.avgTicket)}
+                    </span>
+                  </span>
+                  <span className="text-right text-[15px] font-semibold tabular-nums">
+                    {formatColones(person.total)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="ios-list rounded-2xl px-4 py-5 text-sm text-muted">
+            Asigne el puesto de Ventas para ver eficiencia por persona.
+          </p>
+        )}
+      </section>
+
+      <section className="mt-6">
+        <p className="mb-2 px-1 text-xs font-medium tracking-wide text-muted uppercase">
+          Góndola de la semana
+        </p>
+        <div className="mb-2 grid grid-cols-3 gap-2">
+          <Stat label="Metidos" value={String(week?.received ?? 0)} />
+          <Stat label="Salidas" value={String(week?.waste ?? 0)} />
+          <Stat label="Merma" value={`${data?.wasteRate ?? 0}%`} warn={(data?.wasteRate ?? 0) > 8} />
+        </div>
+        {data?.gondoleros.length ? (
+          <ul className="ios-list divide-y divide-border overflow-hidden rounded-2xl">
+            {data.gondoleros.map((person) => (
+              <li key={person.id} className="flex items-center gap-3 px-4 py-3">
+                <AnimalAvatar name={person.name} animal={person.animal} color={person.color} size="sm" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[15px] font-medium">{person.name}</span>
+                  <span className="text-xs text-muted">
+                    +{person.received} · −{person.waste} · {formatColones(person.wasteValue)} merma
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="ios-list rounded-2xl px-4 py-5 text-sm text-muted">
+            No hay gondoleros asignados esta semana.
+          </p>
+        )}
+      </section>
+
+      {last && last.total > 0 ? (
+        <p className="mt-6 px-1 text-xs text-muted">
+          Semana pasada: {formatColones(last.total)} en {last.count} tickets
+          {last.avgTicket ? ` · ticket ${formatColones(last.avgTicket)}` : ""}.
+        </p>
       ) : null}
     </main>
+  );
+}
+
+function Stat({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+  return (
+    <div className="ios-list rounded-2xl px-4 py-3">
+      <p className="text-xs text-muted">{label}</p>
+      <p className={cn("mt-1 text-[15px] font-semibold tabular-nums", warn && "text-danger")}>{value}</p>
+    </div>
+  );
+}
+
+function MixRow({
+  label,
+  pct,
+  amount,
+  tone,
+}: {
+  label: string;
+  pct: number;
+  amount: number;
+  tone: string;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-medium">{label}</span>
+        <span className="tabular-nums text-muted">
+          {pct}% · {formatColones(amount)}
+        </span>
+      </div>
+      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-fill">
+        <div className={cn("h-full rounded-full", tone)} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
   );
 }

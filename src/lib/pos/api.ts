@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { costaRicaStamp } from "@/lib/money";
+import { costaRicaStamp, startOfCostaRicaWeekIso, addDaysIso, weekDayKeys, formatWeekRange, percentDelta, costaRicaYmd } from "@/lib/money";
 import { DEFAULT_SETTINGS, SEED_PRODUCTS } from "./catalog";
 import { parseAnimal, parseColor } from "./avatar";
 import { normalizeRole } from "./staff";
@@ -21,6 +21,9 @@ import type {
   TodaySummary,
   VentasPerf,
   WasteReason,
+  WeekDayPoint,
+  WeekTotals,
+  WeeklyDashboard,
 } from "./types";
 
 type Sql = Awaited<ReturnType<(typeof import("@/lib/db"))["getSql"]>>;
@@ -893,3 +896,261 @@ export const getDailyPerformance = createServerFn({ method: "POST" })
     const result: DailyPerformance = { ventas, gondoleros, events, totals };
     return result;
   });
+
+function emptyWeek(): WeekTotals {
+  return {
+    count: 0,
+    total: 0,
+    cash: 0,
+    card: 0,
+    sinpe: 0,
+    avgTicket: 0,
+    received: 0,
+    waste: 0,
+    wasteValue: 0,
+  };
+}
+
+function applyPay(
+  totals: WeekTotals,
+  rows: Array<{ payment_method: string; n: number; total: number }>,
+) {
+  for (const row of rows) {
+    const amount = Number(row.total);
+    const count = Number(row.n);
+    totals.count += count;
+    totals.total += amount;
+    if (row.payment_method === "cash") totals.cash = amount;
+    if (row.payment_method === "card") totals.card = amount;
+    if (row.payment_method === "sinpe") totals.sinpe = amount;
+  }
+  totals.avgTicket = totals.count ? Math.round(totals.total / totals.count) : 0;
+}
+
+export const getWeeklyDashboard = createServerFn({ method: "GET" }).handler(async () => {
+  const sql = await db();
+  await ensureSeed(sql);
+  const weekStart = startOfCostaRicaWeekIso(0);
+  const nextWeek = addDaysIso(weekStart, 7);
+  const lastStart = startOfCostaRicaWeekIso(1);
+  const todayKey = costaRicaYmd();
+  const keys = weekDayKeys(weekStart);
+  const elapsed = Math.max(1, keys.filter((d) => d.key <= todayKey).length);
+
+  async function payBetween(from: string, to: string) {
+    return sql<{ payment_method: string; n: number; total: number }>`
+      select payment_method, count(*)::int as n, coalesce(sum(total), 0)::int as total
+      from sales
+      where created_at >= ${from}::timestamptz
+        and created_at < ${to}::timestamptz
+        and status = 'completed'
+      group by payment_method
+    `;
+  }
+
+  async function stockBetween(from: string, to: string) {
+    const rows = await sql<{ kind: string; qty: number; value: number }>`
+      select
+        kind,
+        coalesce(sum(qty), 0)::int as qty,
+        coalesce(sum(qty * coalesce(price_after, 0)), 0)::int as value
+      from inventory_events
+      where created_at >= ${from}::timestamptz and created_at < ${to}::timestamptz
+      group by kind
+    `;
+    let received = 0;
+    let waste = 0;
+    let wasteValue = 0;
+    for (const row of rows) {
+      if (row.kind === "receive" || row.kind === "create") received += Number(row.qty);
+      if (row.kind === "waste") {
+        waste += Number(row.qty);
+        wasteValue += Number(row.value);
+      }
+    }
+    return { received, waste, wasteValue };
+  }
+
+  const thisWeek = emptyWeek();
+  applyPay(thisWeek, await payBetween(weekStart, nextWeek));
+  Object.assign(thisWeek, await stockBetween(weekStart, nextWeek));
+  thisWeek.avgTicket = thisWeek.count ? Math.round(thisWeek.total / thisWeek.count) : 0;
+
+  const lastWeek = emptyWeek();
+  applyPay(lastWeek, await payBetween(lastStart, weekStart));
+  Object.assign(lastWeek, await stockBetween(lastStart, weekStart));
+  lastWeek.avgTicket = lastWeek.count ? Math.round(lastWeek.total / lastWeek.count) : 0;
+
+  const dayRows = await sql<{ day: string; n: number; total: number }>`
+    select to_char(created_at at time zone 'America/Costa_Rica', 'YYYY-MM-DD') as day,
+           count(*)::int as n,
+           coalesce(sum(total), 0)::int as total
+    from sales
+    where created_at >= ${weekStart}::timestamptz
+      and created_at < ${nextWeek}::timestamptz
+      and status = 'completed'
+    group by 1
+  `;
+  const byDay = new Map(dayRows.map((row) => [row.day, row]));
+  const days: WeekDayPoint[] = keys.map((d) => {
+    const row = byDay.get(d.key);
+    return {
+      key: d.key,
+      label: d.label,
+      count: Number(row?.n ?? 0),
+      total: Number(row?.total ?? 0),
+    };
+  });
+  const bestDay = days.reduce<WeekDayPoint | null>((best, day) => {
+    if (day.total <= 0) return best;
+    if (!best || day.total > best.total) return day;
+    return best;
+  }, null);
+
+  const hourRows = await sql<{ h: number; n: number }>`
+    select extract(hour from created_at at time zone 'America/Costa_Rica')::int as h,
+           count(*)::int as n
+    from sales
+    where created_at >= ${weekStart}::timestamptz
+      and created_at < ${nextWeek}::timestamptz
+      and status = 'completed'
+    group by 1
+    order by n desc
+    limit 1
+  `;
+  const peakHour = hourRows[0] ? { hour: Number(hourRows[0].h), count: Number(hourRows[0].n) } : null;
+
+  const mixTotal = thisWeek.cash + thisWeek.card + thisWeek.sinpe;
+  const mix = {
+    cash: mixTotal ? Math.round((thisWeek.cash / mixTotal) * 100) : 0,
+    card: mixTotal ? Math.round((thisWeek.card / mixTotal) * 100) : 0,
+    sinpe: mixTotal ? Math.round((thisWeek.sinpe / mixTotal) * 100) : 0,
+  };
+
+  const ventasRows = await sql<{
+    id: number;
+    name: string;
+    avatar_animal: string | null;
+    avatar_color: string | null;
+    n: number;
+    total: number;
+    cash: number;
+    card: number;
+    sinpe: number;
+    last_sale: string | null;
+  }>`
+    select
+      e.id,
+      e.name,
+      e.avatar_animal,
+      e.avatar_color,
+      count(s.id)::int as n,
+      coalesce(sum(s.total), 0)::int as total,
+      coalesce(sum(case when s.payment_method = 'cash' then s.total else 0 end), 0)::int as cash,
+      coalesce(sum(case when s.payment_method = 'card' then s.total else 0 end), 0)::int as card,
+      coalesce(sum(case when s.payment_method = 'sinpe' then s.total else 0 end), 0)::int as sinpe,
+      max(s.created_at)::text as last_sale
+    from employees e
+    left join sales s
+      on s.employee_id = e.id
+      and s.created_at >= ${weekStart}::timestamptz
+      and s.created_at < ${nextWeek}::timestamptz
+      and s.status = 'completed'
+    where e.active = true and e.role in ('ventas', 'cajero', 'admin')
+    group by e.id, e.name, e.avatar_animal, e.avatar_color
+    order by total desc, e.name
+  `;
+  const ventas: VentasPerf[] = ventasRows.map((row) => {
+    const count = Number(row.n);
+    const total = Number(row.total);
+    return {
+      id: row.id,
+      name: row.name,
+      animal: parseAnimal(row.avatar_animal),
+      color: parseColor(row.avatar_color),
+      count,
+      total,
+      cash: Number(row.cash),
+      card: Number(row.card),
+      sinpe: Number(row.sinpe),
+      avgTicket: count ? Math.round(total / count) : 0,
+      lastSaleAt: row.last_sale,
+    };
+  });
+
+  const gondoPeople = await sql<{
+    id: number;
+    name: string;
+    avatar_animal: string | null;
+    avatar_color: string | null;
+  }>`
+    select id, name, avatar_animal, avatar_color
+    from employees
+    where active = true and role = 'gondolero'
+    order by name
+  `;
+  const eventAgg = await sql<{
+    employee_id: number;
+    kind: string;
+    reason: string | null;
+    qty: number;
+    n: number;
+    value: number;
+    last_at: string | null;
+  }>`
+    select
+      employee_id, kind, reason,
+      coalesce(sum(qty), 0)::int as qty,
+      count(*)::int as n,
+      coalesce(sum(qty * coalesce(price_after, 0)), 0)::int as value,
+      max(created_at)::text as last_at
+    from inventory_events
+    where created_at >= ${weekStart}::timestamptz and created_at < ${nextWeek}::timestamptz
+    group by employee_id, kind, reason
+  `;
+  const gondoleros: GondoPerf[] = gondoPeople.map((person) => {
+    const mine = eventAgg.filter((row) => Number(row.employee_id) === person.id);
+    const received = mine.filter((r) => r.kind === "receive" || r.kind === "create").reduce((s, r) => s + Number(r.qty), 0);
+    const created = mine.filter((r) => r.kind === "create").reduce((s, r) => s + Number(r.n), 0);
+    const wasteRows = mine.filter((r) => r.kind === "waste");
+    const waste = wasteRows.reduce((s, r) => s + Number(r.qty), 0);
+    return {
+      id: person.id,
+      name: person.name,
+      animal: parseAnimal(person.avatar_animal),
+      color: parseColor(person.avatar_color),
+      received,
+      created,
+      waste,
+      wasteVencido: wasteRows.filter((r) => r.reason === "vencido").reduce((s, r) => s + Number(r.qty), 0),
+      wasteRoto: wasteRows.filter((r) => r.reason === "roto").reduce((s, r) => s + Number(r.qty), 0),
+      wasteOtro: wasteRows.filter((r) => r.reason === "otro").reduce((s, r) => s + Number(r.qty), 0),
+      wasteValue: wasteRows.reduce((s, r) => s + Number(r.value), 0),
+      priceChanges: mine.filter((r) => r.kind === "price").reduce((s, r) => s + Number(r.n), 0),
+      lastAt: mine.reduce<string | null>((best, row) => {
+        if (!row.last_at) return best;
+        if (!best || row.last_at > best) return row.last_at;
+        return best;
+      }, null),
+    };
+  });
+
+  const moved = thisWeek.received + thisWeek.waste;
+  const dashboard: WeeklyDashboard = {
+    weekStart,
+    weekLabel: formatWeekRange(weekStart),
+    daysElapsed: elapsed,
+    thisWeek,
+    lastWeek,
+    deltaPct: percentDelta(thisWeek.total, lastWeek.total),
+    days,
+    bestDay,
+    peakHour,
+    mix,
+    perDay: Math.round(thisWeek.total / elapsed),
+    wasteRate: moved ? Math.round((thisWeek.waste / moved) * 100) : 0,
+    ventas,
+    gondoleros,
+  };
+  return dashboard;
+});

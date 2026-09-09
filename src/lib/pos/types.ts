@@ -151,6 +151,43 @@ export type DailyPerformance = {
   };
 };
 
+export type WeekDayPoint = {
+  key: string;
+  label: string;
+  count: number;
+  total: number;
+};
+
+export type WeekTotals = {
+  count: number;
+  total: number;
+  cash: number;
+  card: number;
+  sinpe: number;
+  avgTicket: number;
+  received: number;
+  waste: number;
+  wasteValue: number;
+};
+
+export type WeeklyDashboard = {
+  weekStart: string;
+  weekLabel: string;
+  daysElapsed: number;
+  thisWeek: WeekTotals;
+  lastWeek: WeekTotals;
+  deltaPct: number | null;
+  days: WeekDayPoint[];
+  bestDay: WeekDayPoint | null;
+  peakHour: { hour: number; count: number } | null;
+  mix: { cash: number; card: number; sinpe: number };
+  perDay: number;
+  wasteRate: number;
+  ventas: VentasPerf[];
+  gondoleros: GondoPerf[];
+};
+
+
 export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
   cash: "Efectivo",
   card: "Tarjeta",
