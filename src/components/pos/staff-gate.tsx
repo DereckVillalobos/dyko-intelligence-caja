@@ -6,12 +6,15 @@ import { Button } from "@/components/ui/button";
 import { AnimalAvatar } from "@/components/pos/animal-avatar";
 import { EmployeeForm, type EmployeeDraft } from "@/components/pos/employee-form";
 import { PinPad } from "@/components/pos/pin-pad";
+import { SetPin } from "@/components/pos/set-pin";
 import { WaitingPost } from "@/components/pos/waiting-post";
 import {
   createEmployee,
   findBoundEmployee,
   getEmployee,
   listEmployees,
+  requestPinReset,
+  setNewPin,
   setupFirstEmployee,
   unlockEmployee,
   type PublicEmployee,
@@ -26,6 +29,7 @@ export function StaffGate({ children }: { children: React.ReactNode }) {
   const session = useStaff((s) => s.session);
   const setMode = useStaff((s) => s.setMode);
   const signIn = useStaff((s) => s.signIn);
+  const signOut = useStaff((s) => s.signOut);
   const [ready, setReady] = useState(false);
   const [checkingBind, setCheckingBind] = useState(true);
 
@@ -44,6 +48,11 @@ export function StaffGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const next = meQuery.data;
     if (!session || !next) return;
+    if (next.mustSetPin) {
+      signOut();
+      toast("El gerente restableció su PIN. Créelo de nuevo.");
+      return;
+    }
     if (
       next.role !== session.role ||
       next.name !== session.name ||
@@ -61,7 +70,7 @@ export function StaffGate({ children }: { children: React.ReactNode }) {
         color: next.color,
       });
     }
-  }, [meQuery.data, session, signIn]);
+  }, [meQuery.data, session, signIn, signOut]);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,7 +103,7 @@ export function StaffGate({ children }: { children: React.ReactNode }) {
     void findBoundEmployee({ data: { deviceId: getDeviceId() } })
       .then((bound) => {
         if (cancelled) return;
-        if (bound) {
+        if (bound && !bound.mustSetPin) {
           signIn({
             employeeId: bound.id,
             name: bound.name,
@@ -283,6 +292,7 @@ function LockScreen({
   const [adding, setAdding] = useState(false);
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [forgot, setForgot] = useState(false);
 
   const mutation = useMutation({
     mutationFn: (code: string) =>
@@ -301,8 +311,31 @@ function LockScreen({
     },
   });
 
+  const resetMut = useMutation({
+    mutationFn: () => requestPinReset({ data: { employeeId: picked!.id } }),
+    onSuccess: () => {
+      setForgot(true);
+      void queryClient.invalidateQueries({ queryKey: ["employees"] });
+    },
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const newPinMut = useMutation({
+    mutationFn: (code: string) =>
+      setNewPin({
+        data: {
+          employeeId: picked!.id,
+          pin: code,
+          deviceId: getDeviceId(),
+          bind: mode === "personal",
+        },
+      }),
+    onSuccess: onUnlock,
+    onError: (err: Error) => setError(err.message),
+  });
+
   useEffect(() => {
-    if (pin.length !== 4 || !picked) return;
+    if (pin.length !== 4 || !picked || picked.mustSetPin) return;
     mutation.mutate(pin);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pin]);
@@ -340,6 +373,7 @@ function LockScreen({
                   setPicked(person);
                   setPin("");
                   setError(null);
+                  setForgot(false);
                 }}
                 className="ios-list flex w-full flex-col items-center gap-3 rounded-3xl px-3 py-5 text-center transition-transform duration-150 active:scale-[0.98]"
               >
@@ -351,7 +385,9 @@ function LockScreen({
                 />
                 <span className="min-w-0">
                   <span className="block truncate text-[17px] font-semibold">{person.name}</span>
-                  <span className="text-xs text-muted">{roleLabel(person.role)}</span>
+                  <span className="text-xs text-muted">
+                    {person.mustSetPin ? "Crear PIN nuevo" : roleLabel(person.role)}
+                  </span>
                 </span>
               </button>
             </li>
@@ -365,6 +401,37 @@ function LockScreen({
             </Button>
           </div>
         ) : null}
+      </div>
+    );
+  }
+
+  if (picked.mustSetPin) {
+    return (
+      <SetPin
+        name={picked.name}
+        animal={picked.animal}
+        color={picked.color}
+        kicker="PIN restablecido"
+        pending={newPinMut.isPending}
+        error={error}
+        onBack={() => setPicked(null)}
+        onSubmit={(code) => newPinMut.mutate(code)}
+      />
+    );
+  }
+
+  if (forgot) {
+    return (
+      <div className="mx-auto flex min-h-dvh max-w-md flex-col px-5 py-8 pt-[max(2rem,env(safe-area-inset-top))]">
+        <button type="button" className="self-start text-sm font-medium text-primary" onClick={() => setPicked(null)}>
+          Atrás
+        </button>
+        <div className="mt-16 text-center">
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Espere al gerente</h1>
+          <p className="mt-2 text-[15px] text-muted">
+            {picked.name}, el gerente restablece su PIN en Equipo. Después vuelva y cree uno nuevo.
+          </p>
+        </div>
       </div>
     );
   }
@@ -383,6 +450,14 @@ function LockScreen({
         <PinPad value={pin} onChange={(next) => { setError(null); setPin(next); }} disabled={mutation.isPending} error={Boolean(error)} />
         {error ? <p className="mt-4 text-center text-sm text-danger">{error}</p> : null}
       </div>
+      <button
+        type="button"
+        className="mt-6 text-center text-sm font-medium text-primary"
+        disabled={resetMut.isPending}
+        onClick={() => resetMut.mutate()}
+      >
+        Olvidé mi PIN
+      </button>
     </div>
   );
 }

@@ -17,6 +17,8 @@ export type PublicEmployee = {
   bound: boolean;
   animal: string;
   color: string;
+  mustSetPin: boolean;
+  pinResetRequested: boolean;
 };
 
 const pinSchema = z.string().regex(/^\d{4}$/, "El PIN debe tener 4 dígitos");
@@ -53,6 +55,8 @@ type EmployeeRow = {
   device_token: string | null;
   avatar_animal: string | null;
   avatar_color: string | null;
+  must_set_pin: boolean | null;
+  pin_reset_requested: boolean | null;
 };
 
 function asPublic(row: EmployeeRow): PublicEmployee {
@@ -63,6 +67,8 @@ function asPublic(row: EmployeeRow): PublicEmployee {
     bound: Boolean(row.device_token),
     animal: parseAnimal(row.avatar_animal),
     color: parseColor(row.avatar_color),
+    mustSetPin: Boolean(row.must_set_pin),
+    pinResetRequested: Boolean(row.pin_reset_requested),
   };
 }
 
@@ -79,7 +85,7 @@ function asSession(row: EmployeeRow) {
 export const listEmployees = createServerFn({ method: "GET" }).handler(async () => {
   const sql = await db();
   const rows = await sql<EmployeeRow>`
-    select id, name, role, device_token, avatar_animal, avatar_color
+    select id, name, role, device_token, avatar_animal, avatar_color, must_set_pin, pin_reset_requested
     from employees
     where active = true and role <> 'gerente'
     order by name
@@ -90,7 +96,7 @@ export const listEmployees = createServerFn({ method: "GET" }).handler(async () 
 export const listGerentes = createServerFn({ method: "GET" }).handler(async () => {
   const sql = await db();
   const rows = await sql<EmployeeRow>`
-    select id, name, role, device_token, avatar_animal, avatar_color
+    select id, name, role, device_token, avatar_animal, avatar_color, must_set_pin, pin_reset_requested
     from employees
     where active = true and role = 'gerente'
     order by name
@@ -101,7 +107,7 @@ export const listGerentes = createServerFn({ method: "GET" }).handler(async () =
 export const listTeam = createServerFn({ method: "GET" }).handler(async () => {
   const sql = await db();
   const rows = await sql<EmployeeRow>`
-    select id, name, role, device_token, avatar_animal, avatar_color
+    select id, name, role, device_token, avatar_animal, avatar_color, must_set_pin, pin_reset_requested
     from employees
     where active = true and role <> 'gerente'
     order by
@@ -116,7 +122,7 @@ export const getEmployee = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const sql = await db();
     const rows = await sql<EmployeeRow>`
-      select id, name, role, device_token, avatar_animal, avatar_color
+      select id, name, role, device_token, avatar_animal, avatar_color, must_set_pin, pin_reset_requested
       from employees
       where id = ${data.id} and active = true
       limit 1
@@ -129,7 +135,7 @@ export const findBoundEmployee = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const sql = await db();
     const rows = await sql<EmployeeRow>`
-      select id, name, role, device_token, avatar_animal, avatar_color
+      select id, name, role, device_token, avatar_animal, avatar_color, must_set_pin, pin_reset_requested
       from employees
       where device_token = ${data.deviceId} and active = true
       limit 1
@@ -155,16 +161,21 @@ async function unlockRow(
     locked_until: string | null;
     avatar_animal: string | null;
     avatar_color: string | null;
+    must_set_pin: boolean | null;
+    pin_reset_requested: boolean | null;
   }>`
     select id, name, role, pin_hash, pin_salt, device_token,
            failed_attempts, locked_until::text as locked_until,
-           avatar_animal, avatar_color
+           avatar_animal, avatar_color, must_set_pin, pin_reset_requested
     from employees
     where id = ${employeeId} and active = true
     limit 1
   `;
   const row = rows[0];
   if (!row) throw new Error("Empleado no encontrado");
+  if (row.must_set_pin) {
+    throw new Error("El gerente restableció su PIN. Cree uno nuevo.");
+  }
   if (row.locked_until && new Date(row.locked_until).getTime() > Date.now()) {
     throw new Error("Demasiados intentos. Espere medio minuto.");
   }
@@ -233,7 +244,7 @@ export const setupFirstEmployee = createServerFn({ method: "POST" })
     `;
     if (n > 0) {
       const existing = await sql<EmployeeRow>`
-        select id, name, role, device_token, avatar_animal, avatar_color
+        select id, name, role, device_token, avatar_animal, avatar_color, must_set_pin, pin_reset_requested
         from employees
         where active = true and role <> 'gerente'
         order by id
@@ -249,7 +260,7 @@ export const setupFirstEmployee = createServerFn({ method: "POST" })
     const rows = await sql<EmployeeRow>`
       insert into employees (name, pin_hash, pin_salt, role, device_token, avatar_animal, avatar_color)
       values (${data.name}, ${pinHash}, ${salt}, 'pendiente', ${token}, ${data.animal}, ${data.color})
-      returning id, name, role, device_token, avatar_animal, avatar_color
+      returning id, name, role, device_token, avatar_animal, avatar_color, must_set_pin, pin_reset_requested
     `;
     return asSession(rows[0]!);
   });
@@ -271,7 +282,7 @@ export const setupGerente = createServerFn({ method: "POST" })
     `;
     if (n > 0) {
       const existing = await sql<EmployeeRow>`
-        select id, name, role, device_token, avatar_animal, avatar_color
+        select id, name, role, device_token, avatar_animal, avatar_color, must_set_pin, pin_reset_requested
         from employees
         where active = true and role = 'gerente'
         order by id
@@ -286,7 +297,7 @@ export const setupGerente = createServerFn({ method: "POST" })
     const rows = await sql<EmployeeRow>`
       insert into employees (name, pin_hash, pin_salt, role, avatar_animal, avatar_color)
       values (${data.name}, ${pinHash}, ${salt}, 'gerente', ${data.animal}, ${data.color})
-      returning id, name, role, device_token, avatar_animal, avatar_color
+      returning id, name, role, device_token, avatar_animal, avatar_color, must_set_pin, pin_reset_requested
     `;
     return asSession(rows[0]!);
   });
@@ -309,7 +320,7 @@ export const createEmployee = createServerFn({ method: "POST" })
     const rows = await sql<EmployeeRow>`
       insert into employees (name, pin_hash, pin_salt, role, avatar_animal, avatar_color)
       values (${data.name}, ${pinHash}, ${salt}, 'pendiente', ${data.animal}, ${data.color})
-      returning id, name, role, device_token, avatar_animal, avatar_color
+      returning id, name, role, device_token, avatar_animal, avatar_color, must_set_pin, pin_reset_requested
     `;
     return asPublic(rows[0]!);
   });
@@ -338,7 +349,7 @@ export const createGerente = createServerFn({ method: "POST" })
     const rows = await sql<EmployeeRow>`
       insert into employees (name, pin_hash, pin_salt, role, avatar_animal, avatar_color)
       values (${data.name}, ${pinHash}, ${salt}, 'gerente', ${data.animal}, ${data.color})
-      returning id, name, role, device_token, avatar_animal, avatar_color
+      returning id, name, role, device_token, avatar_animal, avatar_color, must_set_pin, pin_reset_requested
     `;
     return asPublic(rows[0]!);
   });
@@ -358,7 +369,7 @@ export const assignPuesto = createServerFn({ method: "POST" })
     `;
     if (actor[0]?.role !== "gerente") throw new Error("Solo el gerente asigna puestos");
     const target = await sql<EmployeeRow>`
-      select id, name, role, device_token, avatar_animal, avatar_color
+      select id, name, role, device_token, avatar_animal, avatar_color, must_set_pin, pin_reset_requested
       from employees
       where id = ${data.employeeId} and active = true
       limit 1
@@ -371,7 +382,7 @@ export const assignPuesto = createServerFn({ method: "POST" })
       update employees
       set role = ${data.role}
       where id = ${data.employeeId}
-      returning id, name, role, device_token, avatar_animal, avatar_color
+      returning id, name, role, device_token, avatar_animal, avatar_color, must_set_pin, pin_reset_requested
     `;
     return asPublic(updated[0]!);
   });
@@ -382,4 +393,82 @@ export const unbindDevice = createServerFn({ method: "POST" })
     const sql = await db();
     await sql`update employees set device_token = null where device_token = ${data.deviceId}`;
     return { ok: true as const };
+  });
+
+export const requestPinReset = createServerFn({ method: "POST" })
+  .validator(z.object({ employeeId: z.number().int().positive() }))
+  .handler(async ({ data }) => {
+    const sql = await db();
+    const rows = await sql<EmployeeRow>`
+      update employees
+      set pin_reset_requested = true
+      where id = ${data.employeeId} and active = true and role <> 'gerente'
+      returning id, name, role, device_token, avatar_animal, avatar_color, must_set_pin, pin_reset_requested
+    `;
+    if (!rows[0]) throw new Error("Empleado no encontrado");
+    return asPublic(rows[0]);
+  });
+
+export const resetEmployeePin = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      actorId: z.number().int().positive(),
+      employeeId: z.number().int().positive(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const sql = await db();
+    const actor = await sql<{ role: string }>`
+      select role from employees where id = ${data.actorId} and active = true limit 1
+    `;
+    if (actor[0]?.role !== "gerente") throw new Error("Solo el gerente restablece PIN");
+    const rows = await sql<EmployeeRow>`
+      update employees
+      set must_set_pin = true,
+          pin_reset_requested = false,
+          failed_attempts = 0,
+          locked_until = null,
+          device_token = null
+      where id = ${data.employeeId} and active = true and role <> 'gerente'
+      returning id, name, role, device_token, avatar_animal, avatar_color, must_set_pin, pin_reset_requested
+    `;
+    if (!rows[0]) throw new Error("Trabajador no encontrado");
+    return asPublic(rows[0]);
+  });
+
+export const setNewPin = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      employeeId: z.number().int().positive(),
+      pin: pinSchema,
+      deviceId: z.string().uuid(),
+      bind: z.boolean(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const sql = await db();
+    const rows = await sql<{ id: number; must_set_pin: boolean }>`
+      select id, must_set_pin from employees
+      where id = ${data.employeeId} and active = true
+      limit 1
+    `;
+    if (!rows[0]) throw new Error("Empleado no encontrado");
+    if (!rows[0].must_set_pin) throw new Error("No hay un restablecimiento pendiente");
+    const { randomBytes } = await import("node:crypto");
+    const salt = randomBytes(16).toString("hex");
+    const pinHash = await hashPin(data.pin, salt);
+    const token = data.bind ? data.deviceId : null;
+    const next = await sql<EmployeeRow>`
+      update employees
+      set pin_hash = ${pinHash},
+          pin_salt = ${salt},
+          must_set_pin = false,
+          pin_reset_requested = false,
+          failed_attempts = 0,
+          locked_until = null,
+          device_token = ${token}
+      where id = ${data.employeeId}
+      returning id, name, role, device_token, avatar_animal, avatar_color, must_set_pin, pin_reset_requested
+    `;
+    return asSession(next[0]!);
   });

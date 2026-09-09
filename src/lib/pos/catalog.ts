@@ -29,4 +29,6 @@ export const DEFAULT_SETTINGS = {
   storeName: "Dyko Intelligence",
   sinpePhone: "8888-0101",
   sinpeHolder: "Dyko Intelligence",
+  dailyGoal: 0,
+  cashFloat: 0,
 };

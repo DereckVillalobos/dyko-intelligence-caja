@@ -6,6 +6,7 @@ import { parseAnimal, parseColor } from "./avatar";
 import { normalizeRole } from "./staff";
 import type {
   CashierStat,
+  CashClose,
   DailyPerformance,
   GondoPerf,
   InventoryEvent,
@@ -48,7 +49,9 @@ async function ensureSeed(sql: Sql) {
     insert into store_settings (key, value) values
       ('storeName', ${DEFAULT_SETTINGS.storeName}),
       ('sinpePhone', ${DEFAULT_SETTINGS.sinpePhone}),
-      ('sinpeHolder', ${DEFAULT_SETTINGS.sinpeHolder})
+      ('sinpeHolder', ${DEFAULT_SETTINGS.sinpeHolder}),
+      ('dailyGoal', ${String(DEFAULT_SETTINGS.dailyGoal)}),
+      ('cashFloat', ${String(DEFAULT_SETTINGS.cashFloat)})
     on conflict (key) do nothing
   `;
 }
@@ -495,6 +498,8 @@ export const getSettings = createServerFn({ method: "GET" }).handler(async () =>
     storeName: map.storeName ?? DEFAULT_SETTINGS.storeName,
     sinpePhone: map.sinpePhone ?? DEFAULT_SETTINGS.sinpePhone,
     sinpeHolder: map.sinpeHolder ?? DEFAULT_SETTINGS.sinpeHolder,
+    dailyGoal: Number(map.dailyGoal ?? DEFAULT_SETTINGS.dailyGoal) || 0,
+    cashFloat: Number(map.cashFloat ?? DEFAULT_SETTINGS.cashFloat) || 0,
   };
   return settings;
 });
@@ -529,6 +534,172 @@ export const saveSettings = createServerFn({ method: "POST" })
     }
     return payload;
   });
+
+async function requireGerente(sql: Sql, actorId: number) {
+  const actor = await sql<{ role: string }>`
+    select role from employees where id = ${actorId} and active = true limit 1
+  `;
+  if (actor[0]?.role !== "gerente") throw new Error("Solo el gerente puede hacer esto");
+}
+
+async function readSettingMap(sql: Sql) {
+  const rows = await sql<{ key: string; value: string }>`select key, value from store_settings`;
+  return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+}
+
+export const saveDailyGoal = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      actorId: z.number().int().positive(),
+      dailyGoal: z.number().int().nonnegative().max(50_000_000),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const sql = await db();
+    await requireGerente(sql, data.actorId);
+    await sql`
+      insert into store_settings (key, value) values ('dailyGoal', ${String(data.dailyGoal)})
+      on conflict (key) do update set value = excluded.value
+    `;
+    return { dailyGoal: data.dailyGoal };
+  });
+
+async function cashCloseForDay(sql: Sql, dayKey: string, since: string): Promise<CashClose> {
+  const pay = await sql<{ payment_method: string; n: number; total: number }>`
+    select payment_method, count(*)::int as n, coalesce(sum(total), 0)::int as total
+    from sales
+    where created_at >= ${since}::timestamptz and status = 'completed'
+    group by payment_method
+  `;
+  let cashSales = 0;
+  let cardTotal = 0;
+  let sinpeTotal = 0;
+  let salesCount = 0;
+  let salesTotal = 0;
+  for (const row of pay) {
+    const amount = Number(row.total);
+    const count = Number(row.n);
+    salesCount += count;
+    salesTotal += amount;
+    if (row.payment_method === "cash") cashSales = amount;
+    if (row.payment_method === "card") cardTotal = amount;
+    if (row.payment_method === "sinpe") sinpeTotal = amount;
+  }
+  const map = await readSettingMap(sql);
+  const floatAmount = Number(map.cashFloat ?? 0) || 0;
+  const existing = await sql<{
+    counted_cash: number;
+    difference: number;
+    float_amount: number;
+    expected_cash: number;
+    note: string | null;
+    created_at: string;
+    closer: string;
+  }>`
+    select
+      c.counted_cash,
+      c.difference,
+      c.float_amount,
+      c.expected_cash,
+      c.note,
+      c.created_at::text as created_at,
+      e.name as closer
+    from cash_closes c
+    join employees e on e.id = c.employee_id
+    where c.day_key = ${dayKey}
+    limit 1
+  `;
+  const row = existing[0];
+  if (row) {
+    return {
+      dayKey,
+      closed: true,
+      closedAt: row.created_at,
+      closerName: row.closer,
+      floatAmount: Number(row.float_amount),
+      cashSales,
+      expectedCash: Number(row.expected_cash),
+      countedCash: Number(row.counted_cash),
+      difference: Number(row.difference),
+      cardTotal,
+      sinpeTotal,
+      salesCount,
+      salesTotal,
+      note: row.note,
+    };
+  }
+  return {
+    dayKey,
+    closed: false,
+    closedAt: null,
+    closerName: null,
+    floatAmount,
+    cashSales,
+    expectedCash: floatAmount + cashSales,
+    countedCash: 0,
+    difference: 0,
+    cardTotal,
+    sinpeTotal,
+    salesCount,
+    salesTotal,
+    note: null,
+  };
+}
+
+export const getCashClose = createServerFn({ method: "POST" })
+  .validator(z.object({ since: z.string().min(10) }))
+  .handler(async ({ data }) => {
+    const sql = await db();
+    await ensureSeed(sql);
+    return cashCloseForDay(sql, costaRicaYmd(), data.since);
+  });
+
+export const submitCashClose = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      actorId: z.number().int().positive(),
+      countedCash: z.number().int().nonnegative().max(50_000_000),
+      floatAmount: z.number().int().nonnegative().max(50_000_000),
+      note: z.string().trim().max(160).optional(),
+      since: z.string().min(10),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const sql = await db();
+    await requireGerente(sql, data.actorId);
+    const dayKey = costaRicaYmd();
+    const preview = await cashCloseForDay(sql, dayKey, data.since);
+    const expected = data.floatAmount + preview.cashSales;
+    const difference = data.countedCash - expected;
+    await sql`
+      insert into cash_closes (
+        day_key, employee_id, expected_cash, counted_cash, difference, float_amount,
+        card_total, sinpe_total, sales_count, sales_total, note
+      )
+      values (
+        ${dayKey}, ${data.actorId}, ${expected}, ${data.countedCash}, ${difference}, ${data.floatAmount},
+        ${preview.cardTotal}, ${preview.sinpeTotal}, ${preview.salesCount}, ${preview.salesTotal}, ${data.note ?? null}
+      )
+      on conflict (day_key) do update set
+        employee_id = excluded.employee_id,
+        expected_cash = excluded.expected_cash,
+        counted_cash = excluded.counted_cash,
+        difference = excluded.difference,
+        float_amount = excluded.float_amount,
+        card_total = excluded.card_total,
+        sinpe_total = excluded.sinpe_total,
+        sales_count = excluded.sales_count,
+        sales_total = excluded.sales_total,
+        note = excluded.note,
+        created_at = now()
+    `;
+    await sql`
+      insert into store_settings (key, value) values ('cashFloat', ${String(data.floatAmount)})
+      on conflict (key) do update set value = excluded.value
+    `;
+    return cashCloseForDay(sql, dayKey, data.since);
+  });
+
 
 export const adjustStock = createServerFn({ method: "POST" })
   .validator(
@@ -682,12 +853,24 @@ export const getManagerOverview = createServerFn({ method: "POST" })
       stock: Number(row.stock),
     }));
 
+    const map = await readSettingMap(sql);
+    const dailyGoal = Number(map.dailyGoal ?? 0) || 0;
+    const [{ pinResetCount }] = await sql<{ pinResetCount: number }>`
+      select count(*)::int as "pinResetCount"
+      from employees
+      where active = true and pin_reset_requested = true and role <> 'gerente'
+    `;
+    const close = await cashCloseForDay(sql, costaRicaYmd(), data.since);
+
     const overview: ManagerOverview = {
       today,
       cashiers,
       pendingCount: Number(pendingCount),
       teamCount: Number(teamCount),
       lowStock,
+      dailyGoal,
+      pinResetCount: Number(pinResetCount),
+      close,
     };
     return overview;
   });

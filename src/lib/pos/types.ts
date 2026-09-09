@@ -53,6 +53,8 @@ export type StoreSettings = {
   storeName: string;
   sinpePhone: string;
   sinpeHolder: string;
+  dailyGoal: number;
+  cashFloat: number;
 };
 
 export type TodaySummary = {
@@ -85,6 +87,26 @@ export type ManagerOverview = {
   pendingCount: number;
   teamCount: number;
   lowStock: LowStockItem[];
+  dailyGoal: number;
+  pinResetCount: number;
+  close: CashClose | null;
+};
+
+export type CashClose = {
+  dayKey: string;
+  closed: boolean;
+  closedAt: string | null;
+  closerName: string | null;
+  floatAmount: number;
+  cashSales: number;
+  expectedCash: number;
+  countedCash: number;
+  difference: number;
+  cardTotal: number;
+  sinpeTotal: number;
+  salesCount: number;
+  salesTotal: number;
+  note: string | null;
 };
 
 export type WasteReason = "vencido" | "roto" | "otro";

@@ -2,8 +2,9 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { AnimalAvatar } from "@/components/pos/animal-avatar";
-import { assignPuesto, listTeam, type PublicEmployee } from "@/lib/pos/staff-api";
+import { assignPuesto, listTeam, resetEmployeePin, type PublicEmployee } from "@/lib/pos/staff-api";
 import { JOBS, roleLabel, useGerente, type JobRole } from "@/lib/pos/staff";
 import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
@@ -43,6 +44,21 @@ function EquipoPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const resetMut = useMutation({
+    mutationFn: () =>
+      resetEmployeePin({
+        data: { actorId: session!.employeeId, employeeId: picked!.id },
+      }),
+    onSuccess: (person) => {
+      void queryClient.invalidateQueries({ queryKey: ["team"] });
+      void queryClient.invalidateQueries({ queryKey: ["employees"] });
+      void queryClient.invalidateQueries({ queryKey: ["manager-overview"] });
+      toast.success(`${person.name} ya puede crear un PIN nuevo`);
+      setPicked(person);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   if (picked) {
     return (
       <main className="mx-auto flex min-h-[70dvh] max-w-lg flex-col px-4 py-5">
@@ -61,6 +77,16 @@ function EquipoPage() {
               ? "Asigne un puesto para que pueda entrar."
               : `Hoy es ${roleLabel(picked.role)}. Puede cambiarlo.`}
           </p>
+          {picked.pinResetRequested ? (
+            <p className="mt-3 rounded-2xl bg-warning/15 px-3 py-2 text-center text-sm font-medium text-warning">
+              Pidió restablecer el PIN
+            </p>
+          ) : null}
+          {picked.mustSetPin ? (
+            <p className="mt-3 text-center text-sm text-muted">
+              Ya puede crear un PIN nuevo en la caja.
+            </p>
+          ) : null}
         </div>
         <div className="mt-8 space-y-3">
           {JOBS.map((job) => (
@@ -85,6 +111,14 @@ function EquipoPage() {
               </span>
             </button>
           ))}
+          <Button
+            variant="secondary"
+            className="w-full"
+            disabled={resetMut.isPending || picked.mustSetPin}
+            onClick={() => resetMut.mutate()}
+          >
+            {picked.mustSetPin ? "PIN listo para recrear" : "Restablecer PIN"}
+          </Button>
         </div>
       </main>
     );
@@ -146,7 +180,13 @@ function PersonCard({ person, onPick }: { person: PublicEmployee; onPick: () => 
       <AnimalAvatar name={person.name} animal={person.animal} color={person.color} size="md" />
       <span className="min-w-0">
         <span className="block truncate text-[15px] font-medium">{person.name}</span>
-        <span className="text-xs text-muted">{roleLabel(person.role)}</span>
+        <span className="text-xs text-muted">
+          {person.pinResetRequested
+            ? "Olvidó el PIN"
+            : person.mustSetPin
+              ? "Crear PIN nuevo"
+              : roleLabel(person.role)}
+        </span>
       </span>
       {person.role === "pendiente" ? (
         <span className="text-xs font-medium text-primary">Asignar puesto</span>
