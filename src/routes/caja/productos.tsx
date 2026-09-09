@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Scanner } from "@/components/pos/scanner";
-import { adjustStock, createProduct, listProducts, lookupBarcode, updateProduct } from "@/lib/pos/api";
+import { adjustStock, createProduct, getSettings, listProducts, lookupBarcode, updateProduct } from "@/lib/pos/api";
 import { formatColones, costaRicaYmd, formatDay } from "@/lib/money";
 import { queryClient } from "@/lib/query-client";
 import {
@@ -41,7 +41,13 @@ function ProductosPage() {
     queryKey: ["products"],
     queryFn: () => listProducts(),
   });
+  const settingsQuery = useQuery({
+    queryKey: ["settings"],
+    queryFn: () => getSettings(),
+  });
   const products = productsQuery.data ?? [];
+  const alertsOn = settingsQuery.data?.expiryAlertsOn ?? true;
+  const warnDays = settingsQuery.data?.expiryWarnDays ?? 7;
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return products;
@@ -50,11 +56,23 @@ function ProductosPage() {
     );
   }, [products, query]);
   const today = costaRicaYmd();
+  const ranked = useMemo(() => {
+    if (!alertsOn) return filtered;
+    const rank = (p: Product) => {
+      const state = expiryState(p.expiresOn, today, warnDays);
+      if (state === "expired") return 0;
+      if (state === "soon") return 1;
+      return 2;
+    };
+    return [...filtered].sort((a, b) => rank(a) - rank(b));
+  }, [alertsOn, filtered, today, warnDays]);
   const low = products.filter((p) => p.stock <= p.minStock).length;
-  const expiring = products.filter((p) => {
-    const state = expiryState(p.expiresOn, today);
-    return state === "soon" || state === "expired";
-  }).length;
+  const expiredCount = alertsOn
+    ? products.filter((p) => expiryState(p.expiresOn, today, warnDays) === "expired").length
+    : 0;
+  const soonCount = alertsOn
+    ? products.filter((p) => expiryState(p.expiresOn, today, warnDays) === "soon").length
+    : 0;
 
   async function onScanned(code: string) {
     const local = products.find((p) => p.barcode === code);
@@ -87,7 +105,6 @@ function ProductosPage() {
           <h1 className="font-display text-2xl font-semibold tracking-tight">Inventario</h1>
           <p className="mt-1 text-sm text-muted">
             Acomode y cuente. {low ? `${low} con poco stock.` : "Stock al día."}
-            {expiring ? ` ${expiring} por vencer.` : ""}
           </p>
         </div>
         <div className="flex gap-2">
@@ -99,6 +116,19 @@ function ProductosPage() {
           </Button>
         </div>
       </div>
+
+      {expiredCount || soonCount ? (
+        <div className="mt-4 rounded-2xl bg-danger-soft px-4 py-3">
+          <p className="text-[15px] font-semibold text-danger">
+            {expiredCount ? `${expiredCount} vencido${expiredCount === 1 ? "" : "s"}` : null}
+            {expiredCount && soonCount ? " · " : null}
+            {soonCount ? `${soonCount} por vencer` : null}
+          </p>
+          <p className="mt-0.5 text-xs text-muted">
+            Aviso a {warnDays} día{warnDays === 1 ? "" : "s"}. Sáquelos o roténlos.
+          </p>
+        </div>
+      ) : null}
 
       <div className="relative mt-4">
         <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-subtle" />
@@ -118,7 +148,7 @@ function ProductosPage() {
         </div>
       ) : (
         <ul className="ios-list mt-4 divide-y divide-border overflow-hidden rounded-2xl">
-          {filtered.map((product) => (
+          {ranked.map((product) => (
             <li key={product.id}>
               <button
                 type="button"
@@ -138,15 +168,19 @@ function ProductosPage() {
                   </span>
                   <span className={cn(
                     "text-xs",
-                    product.stock <= 0 || expiryState(product.expiresOn, today) === "expired"
+                    product.stock <= 0 || expiryState(product.expiresOn, today, warnDays) === "expired"
                       ? "text-danger"
-                      : product.stock <= product.minStock || expiryState(product.expiresOn, today) === "soon"
+                      : product.stock <= product.minStock || expiryState(product.expiresOn, today, warnDays) === "soon"
                         ? "text-warning"
                         : "text-muted",
                   )}>
                     {product.stock} {product.unit}
                     {product.expiresOn
-                      ? ` · ${expiryState(product.expiresOn, today) === "expired" ? "Vencido" : `Vence ${formatDay(product.expiresOn + "T12:00:00-06:00")}`}`
+                      ? ` · ${
+                          alertsOn && expiryState(product.expiresOn, today, warnDays) === "expired"
+                            ? "Vencido"
+                            : `Vence ${formatDay(`${product.expiresOn}T12:00:00-06:00`)}`
+                        }`
                       : ""}
                   </span>
                 </span>

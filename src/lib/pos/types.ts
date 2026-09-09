@@ -66,6 +66,8 @@ export type StoreSettings = {
   dailyGoal: number;
   cashFloat: number;
   storeCode: string;
+  expiryAlertsOn: boolean;
+  expiryWarnDays: number;
 };
 
 export type TodaySummary = {
@@ -96,6 +98,7 @@ export type ExpiringItem = {
   id: number;
   name: string;
   expiresOn: string;
+  status: "expired" | "soon";
 };
 
 export type ManagerOverview = {
@@ -280,12 +283,26 @@ export function marginPct(price: number, cost: number): number | null {
   return Math.round(((price - cost) / cost) * 100);
 }
 
-export function expiryState(expiresOn: string | null, today: string): "none" | "ok" | "soon" | "expired" {
+export const EXPIRY_WARN_OPTIONS = [3, 7, 15, 30] as const;
+
+export function parseExpiryWarnDays(value: number | string | null | undefined): number {
+  const n = Number(value);
+  if (EXPIRY_WARN_OPTIONS.includes(n as (typeof EXPIRY_WARN_OPTIONS)[number])) return n;
+  if (Number.isFinite(n) && n >= 1 && n <= 90) return Math.round(n);
+  return 7;
+}
+
+export function expiryState(
+  expiresOn: string | null,
+  today: string,
+  warnDays = 7,
+): "none" | "ok" | "soon" | "expired" {
   if (!expiresOn) return "none";
   if (expiresOn < today) return "expired";
   const start = Date.parse(`${today}T12:00:00-06:00`);
   const exp = Date.parse(`${expiresOn}T12:00:00-06:00`);
   if (!Number.isFinite(start) || !Number.isFinite(exp)) return "ok";
-  if ((exp - start) / 86_400_000 <= 7) return "soon";
+  const days = (exp - start) / 86_400_000;
+  if (days <= warnDays) return "soon";
   return "ok";
 }

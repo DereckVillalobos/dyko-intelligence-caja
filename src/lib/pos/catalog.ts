@@ -32,4 +32,6 @@ export const DEFAULT_SETTINGS = {
   dailyGoal: 0,
   cashFloat: 0,
   storeCode: "",
+  expiryAlertsOn: true,
+  expiryWarnDays: 7,
 };

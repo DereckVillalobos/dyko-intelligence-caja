@@ -14,11 +14,11 @@ import { Button } from "@/components/ui/button";
 import { getSettings, getTodaySummary, listProducts, lookupBarcode } from "@/lib/pos/api";
 import { cartTotals, useCart } from "@/lib/pos/cart";
 import { CATEGORIES } from "@/lib/pos/types";
-import { formatColones, startOfCostaRicaDayIso } from "@/lib/money";
+import { formatColones, startOfCostaRicaDayIso, costaRicaYmd } from "@/lib/money";
 import { playScanFeedback, unlockAudio } from "@/lib/pos/beep";
 import { AnimalAvatar } from "@/components/pos/animal-avatar";
 import { useStaff } from "@/lib/pos/staff";
-import type { Product } from "@/lib/pos/types";
+import { expiryState, type Product } from "@/lib/pos/types";
 
 export const Route = createFileRoute("/caja/")({ component: CajaPage });
 
@@ -69,8 +69,14 @@ function CajaPage() {
       addProduct(product);
       setLastAdded(product.name);
       playScanFeedback();
+      const settings = settingsQuery.data;
+      if (settings && settings.expiryAlertsOn) {
+        const state = expiryState(product.expiresOn, costaRicaYmd(), settings.expiryWarnDays);
+        if (state === "expired") toast.error(`${product.name} está vencido`);
+        else if (state === "soon") toast.message(`${product.name} vence pronto`);
+      }
     },
-    [addProduct],
+    [addProduct, settingsQuery.data],
   );
 
   const handleCode = useCallback(

@@ -4,7 +4,7 @@ import { costaRicaStamp, startOfCostaRicaWeekIso, startOfCostaRicaDayIso, addDay
 import { DEFAULT_SETTINGS, SEED_PRODUCTS } from "./catalog";
 import { parseAnimal, parseColor } from "./avatar";
 import { normalizeRole } from "./staff";
-import { parseIvaRate, parseUnit } from "./types";
+import { parseIvaRate, parseUnit, parseExpiryWarnDays, expiryState } from "./types";
 import type {
   CashierStat,
   CashClose,
@@ -53,7 +53,9 @@ async function ensureSeed(sql: Sql) {
       ('sinpePhone', ${DEFAULT_SETTINGS.sinpePhone}),
       ('sinpeHolder', ${DEFAULT_SETTINGS.sinpeHolder}),
       ('dailyGoal', ${String(DEFAULT_SETTINGS.dailyGoal)}),
-      ('cashFloat', ${String(DEFAULT_SETTINGS.cashFloat)})
+      ('cashFloat', ${String(DEFAULT_SETTINGS.cashFloat)}),
+      ('expiryAlertsOn', ${DEFAULT_SETTINGS.expiryAlertsOn ? "1" : "0"}),
+      ('expiryWarnDays', ${String(DEFAULT_SETTINGS.expiryWarnDays)})
     on conflict (key) do nothing
   `;
   const codeRows = await sql<{ value: string }>`
@@ -537,20 +539,23 @@ export const getTodaySummary = createServerFn({ method: "POST" })
     return summary;
   });
 
-export const getSettings = createServerFn({ method: "GET" }).handler(async () => {
-  const sql = await db();
-  await ensureSeed(sql);
-  const rows = await sql<{ key: string; value: string }>`select key, value from store_settings`;
-  const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-  const settings: StoreSettings = {
+function asSettings(map: Record<string, string>): StoreSettings {
+  return {
     storeName: map.storeName ?? DEFAULT_SETTINGS.storeName,
     sinpePhone: map.sinpePhone ?? DEFAULT_SETTINGS.sinpePhone,
     sinpeHolder: map.sinpeHolder ?? DEFAULT_SETTINGS.sinpeHolder,
     dailyGoal: Number(map.dailyGoal ?? DEFAULT_SETTINGS.dailyGoal) || 0,
     cashFloat: Number(map.cashFloat ?? DEFAULT_SETTINGS.cashFloat) || 0,
     storeCode: map.storeCode ?? "",
+    expiryAlertsOn: map.expiryAlertsOn !== "0",
+    expiryWarnDays: parseExpiryWarnDays(map.expiryWarnDays ?? DEFAULT_SETTINGS.expiryWarnDays),
   };
-  return settings;
+}
+
+export const getSettings = createServerFn({ method: "GET" }).handler(async () => {
+  const sql = await db();
+  await ensureSeed(sql);
+  return asSettings(await readSettingMap(sql));
 });
 
 export const saveSettings = createServerFn({ method: "POST" })
@@ -581,7 +586,30 @@ export const saveSettings = createServerFn({ method: "POST" })
         on conflict (key) do update set value = excluded.value
       `;
     }
-    return payload;
+    return asSettings(await readSettingMap(sql));
+  });
+
+export const saveExpiryAlerts = createServerFn({ method: "POST" })
+  .validator(
+    z.object({
+      actorId: z.number().int().positive(),
+      expiryAlertsOn: z.boolean(),
+      expiryWarnDays: z.number().int().min(1).max(90),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const sql = await db();
+    await requireGerente(sql, data.actorId);
+    const days = parseExpiryWarnDays(data.expiryWarnDays);
+    await sql`
+      insert into store_settings (key, value) values ('expiryAlertsOn', ${data.expiryAlertsOn ? "1" : "0"})
+      on conflict (key) do update set value = excluded.value
+    `;
+    await sql`
+      insert into store_settings (key, value) values ('expiryWarnDays', ${String(days)})
+      on conflict (key) do update set value = excluded.value
+    `;
+    return asSettings(await readSettingMap(sql));
   });
 
 async function requireGerente(sql: Sql, actorId: number) {
@@ -887,23 +915,31 @@ export const getManagerOverview = createServerFn({ method: "POST" })
       name: row.name,
       stock: Number(row.stock),
     }));
-    const soon = addDaysIso(startOfCostaRicaDayIso(), 7).slice(0, 10);
-    const expRows = await sql<{ id: number; name: string; expires_on: string }>`
-      select id, name, expires_on::text as expires_on
-      from products
-      where active = true
-        and expires_on is not null
-        and expires_on <= ${soon}::date
-      order by expires_on, name
-      limit 8
-    `;
-    const expiring: ExpiringItem[] = expRows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      expiresOn: String(row.expires_on).slice(0, 10),
-    }));
-
     const map = await readSettingMap(sql);
+    const warnDays = parseExpiryWarnDays(map.expiryWarnDays ?? 7);
+    const alertsOn = map.expiryAlertsOn !== "0";
+    const todayKey = costaRicaYmd();
+    const soon = addDaysIso(startOfCostaRicaDayIso(), warnDays).slice(0, 10);
+    const expRows = alertsOn
+      ? await sql<{ id: number; name: string; expires_on: string }>`
+          select id, name, expires_on::text as expires_on
+          from products
+          where active = true
+            and expires_on is not null
+            and expires_on <= ${soon}::date
+          order by expires_on, name
+          limit 8
+        `
+      : [];
+    const expiring: ExpiringItem[] = expRows.map((row) => {
+      const expiresOn = String(row.expires_on).slice(0, 10);
+      return {
+        id: row.id,
+        name: row.name,
+        expiresOn,
+        status: expiryState(expiresOn, todayKey, warnDays) === "expired" ? "expired" : "soon",
+      };
+    });
     const dailyGoal = Number(map.dailyGoal ?? 0) || 0;
     const [{ pinResetCount }] = await sql<{ pinResetCount: number }>`
       select count(*)::int as "pinResetCount"

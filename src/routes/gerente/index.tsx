@@ -211,8 +211,8 @@ function GerenteHoy() {
             {data!.expiring.map((item) => (
               <li key={item.id} className="flex items-center justify-between px-4 py-3">
                 <span className="truncate text-[15px] font-medium">{item.name}</span>
-                <span className="text-sm text-warning">
-                  {formatDay(`${item.expiresOn}T12:00:00-06:00`)}
+                <span className={item.status === "expired" ? "text-sm text-danger" : "text-sm text-warning"}>
+                  {item.status === "expired" ? "Vencido" : formatDay(`${item.expiresOn}T12:00:00-06:00`)}
                 </span>
               </li>
             ))}
