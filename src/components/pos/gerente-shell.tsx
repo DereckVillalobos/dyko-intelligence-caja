@@ -1,11 +1,12 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, Settings2, ShoppingBag, Users } from "lucide-react";
+import { Activity, LayoutDashboard, Settings2, ShoppingBag, Users } from "lucide-react";
 import { useGerente } from "@/lib/pos/staff";
 import { cn } from "@/lib/utils";
 
 const TABS = [
   { to: "/gerente", label: "Hoy", icon: LayoutDashboard },
   { to: "/gerente/equipo", label: "Equipo", icon: Users },
+  { to: "/gerente/rendimiento", label: "Avance", icon: Activity },
   { to: "/gerente/ventas", label: "Ventas", icon: ShoppingBag },
   { to: "/gerente/ajustes", label: "Ajustes", icon: Settings2 },
 ] as const;
@@ -53,7 +54,7 @@ export function GerenteShell({ children }: { children: React.ReactNode }) {
       <div className="pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:pb-0">{children}</div>
 
       <nav className="glass-bar specular fixed inset-x-0 bottom-0 z-40 border-t border-border/40 pb-[env(safe-area-inset-bottom)] lg:hidden">
-        <ul className="grid grid-cols-4 px-2 pt-1">
+        <ul className="grid grid-cols-5 px-1 pt-1">
           {TABS.map((tab) => {
             const active = pathname === tab.to;
             return (

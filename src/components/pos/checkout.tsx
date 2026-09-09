@@ -215,7 +215,7 @@ export function Checkout({ open, onClose }: { open: boolean; onClose: () => void
         {step === "pay" && method === "sinpe" ? (
           <div className="space-y-4 px-5 pb-6">
             <p className="text-sm text-muted">
-              Pida el SINPE a este número. Confirme cuando vea el dinero en la cuenta.
+              Pida el SINPE a este número del local. Lo define el gerente; aquí no se cambia.
             </p>
             <div className="ios-list rounded-2xl px-4 py-4">
               <p className="text-xs font-medium tracking-wide text-muted uppercase">

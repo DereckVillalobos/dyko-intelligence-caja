@@ -18,6 +18,7 @@ import { Route as ShellProductosRouteImport } from './routes/_shell/productos'
 import { Route as GerenteIndexRouteImport } from './routes/gerente/index'
 import { Route as GerenteAjustesRouteImport } from './routes/gerente/ajustes'
 import { Route as GerenteEquipoRouteImport } from './routes/gerente/equipo'
+import { Route as GerenteRendimientoRouteImport } from './routes/gerente/rendimiento'
 import { Route as GerenteVentasRouteImport } from './routes/gerente/ventas'
 
 const ShellRoute = ShellRouteImport.update({
@@ -64,6 +65,11 @@ const GerenteEquipoRoute = GerenteEquipoRouteImport.update({
   path: '/equipo',
   getParentRoute: () => GerenteRoute,
 } as any)
+const GerenteRendimientoRoute = GerenteRendimientoRouteImport.update({
+  id: '/rendimiento',
+  path: '/rendimiento',
+  getParentRoute: () => GerenteRoute,
+} as any)
 const GerenteVentasRoute = GerenteVentasRouteImport.update({
   id: '/ventas',
   path: '/ventas',
@@ -78,6 +84,7 @@ export interface FileRoutesByFullPath {
   '/productos': typeof ShellProductosRoute
   '/gerente/ajustes': typeof GerenteAjustesRoute
   '/gerente/equipo': typeof GerenteEquipoRoute
+  '/gerente/rendimiento': typeof GerenteRendimientoRoute
   '/gerente/ventas': typeof GerenteVentasRoute
   '/gerente/': typeof GerenteIndexRoute
 }
@@ -87,6 +94,7 @@ export interface FileRoutesByTo {
   '/productos': typeof ShellProductosRoute
   '/gerente/ajustes': typeof GerenteAjustesRoute
   '/gerente/equipo': typeof GerenteEquipoRoute
+  '/gerente/rendimiento': typeof GerenteRendimientoRoute
   '/gerente/ventas': typeof GerenteVentasRoute
   '/': typeof ShellIndexRoute
   '/gerente': typeof GerenteIndexRoute
@@ -100,6 +108,7 @@ export interface FileRoutesById {
   '/_shell/productos': typeof ShellProductosRoute
   '/gerente/ajustes': typeof GerenteAjustesRoute
   '/gerente/equipo': typeof GerenteEquipoRoute
+  '/gerente/rendimiento': typeof GerenteRendimientoRoute
   '/gerente/ventas': typeof GerenteVentasRoute
   '/_shell/': typeof ShellIndexRoute
   '/gerente/': typeof GerenteIndexRoute
@@ -114,6 +123,7 @@ export interface FileRouteTypes {
     | '/productos'
     | '/gerente/ajustes'
     | '/gerente/equipo'
+    | '/gerente/rendimiento'
     | '/gerente/ventas'
     | '/gerente/'
   fileRoutesByTo: FileRoutesByTo
@@ -123,6 +133,7 @@ export interface FileRouteTypes {
     | '/productos'
     | '/gerente/ajustes'
     | '/gerente/equipo'
+    | '/gerente/rendimiento'
     | '/gerente/ventas'
     | '/'
     | '/gerente'
@@ -135,6 +146,7 @@ export interface FileRouteTypes {
     | '/_shell/productos'
     | '/gerente/ajustes'
     | '/gerente/equipo'
+    | '/gerente/rendimiento'
     | '/gerente/ventas'
     | '/_shell/'
     | '/gerente/'
@@ -210,6 +222,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GerenteEquipoRouteImport
       parentRoute: typeof GerenteRoute
     }
+    '/gerente/rendimiento': {
+      id: '/gerente/rendimiento'
+      path: '/rendimiento'
+      fullPath: '/gerente/rendimiento'
+      preLoaderRoute: typeof GerenteRendimientoRouteImport
+      parentRoute: typeof GerenteRoute
+    }
     '/gerente/ventas': {
       id: '/gerente/ventas'
       path: '/ventas'
@@ -239,6 +258,7 @@ const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)
 interface GerenteRouteChildren {
   GerenteAjustesRoute: typeof GerenteAjustesRoute
   GerenteEquipoRoute: typeof GerenteEquipoRoute
+  GerenteRendimientoRoute: typeof GerenteRendimientoRoute
   GerenteVentasRoute: typeof GerenteVentasRoute
   GerenteIndexRoute: typeof GerenteIndexRoute
 }
@@ -246,6 +266,7 @@ interface GerenteRouteChildren {
 const GerenteRouteChildren: GerenteRouteChildren = {
   GerenteAjustesRoute: GerenteAjustesRoute,
   GerenteEquipoRoute: GerenteEquipoRoute,
+  GerenteRendimientoRoute: GerenteRendimientoRoute,
   GerenteVentasRoute: GerenteVentasRoute,
   GerenteIndexRoute: GerenteIndexRoute,
 }

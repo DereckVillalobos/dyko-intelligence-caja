@@ -87,10 +87,80 @@ export type ManagerOverview = {
   lowStock: LowStockItem[];
 };
 
+export type WasteReason = "vencido" | "roto" | "otro";
+
+export type InventoryKind = "create" | "receive" | "waste" | "price";
+
+export type InventoryEvent = {
+  id: number;
+  employeeId: number;
+  employeeName: string;
+  productName: string;
+  kind: InventoryKind;
+  qty: number;
+  reason: WasteReason | null;
+  note: string | null;
+  priceBefore: number | null;
+  priceAfter: number | null;
+  createdAt: string;
+};
+
+export type VentasPerf = {
+  id: number;
+  name: string;
+  animal: string;
+  color: string;
+  count: number;
+  total: number;
+  cash: number;
+  card: number;
+  sinpe: number;
+  avgTicket: number;
+  lastSaleAt: string | null;
+};
+
+export type GondoPerf = {
+  id: number;
+  name: string;
+  animal: string;
+  color: string;
+  received: number;
+  created: number;
+  waste: number;
+  wasteVencido: number;
+  wasteRoto: number;
+  wasteOtro: number;
+  wasteValue: number;
+  priceChanges: number;
+  lastAt: string | null;
+};
+
+export type DailyPerformance = {
+  ventas: VentasPerf[];
+  gondoleros: GondoPerf[];
+  events: InventoryEvent[];
+  totals: {
+    count: number;
+    total: number;
+    cash: number;
+    card: number;
+    sinpe: number;
+    received: number;
+    waste: number;
+    wasteValue: number;
+  };
+};
+
 export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
   cash: "Efectivo",
   card: "Tarjeta",
   sinpe: "SINPE Móvil",
+};
+
+export const WASTE_LABEL: Record<WasteReason, string> = {
+  vencido: "Vencido",
+  roto: "Roto",
+  otro: "Otro",
 };
 
 export const CATEGORIES = [

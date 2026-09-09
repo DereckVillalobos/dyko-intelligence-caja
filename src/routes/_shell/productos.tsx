@@ -9,7 +9,7 @@ import { Scanner } from "@/components/pos/scanner";
 import { adjustStock, createProduct, listProducts, lookupBarcode, updateProduct } from "@/lib/pos/api";
 import { formatColones } from "@/lib/money";
 import { queryClient } from "@/lib/query-client";
-import { CATEGORIES, type Product } from "@/lib/pos/types";
+import { CATEGORIES, WASTE_LABEL, type Product, type WasteReason } from "@/lib/pos/types";
 import { useStaff } from "@/lib/pos/staff";
 import { cn } from "@/lib/utils";
 import { playScanFeedback } from "@/lib/pos/beep";
@@ -164,6 +164,10 @@ function ProductForm({
   const [stock, setStock] = useState(product ? String(product.stock) : "0");
   const [scanOpen, setScanOpen] = useState(false);
   const [liveStock, setLiveStock] = useState(product?.stock ?? 0);
+  const [wasteOpen, setWasteOpen] = useState(false);
+  const [wasteQty, setWasteQty] = useState("1");
+  const [wasteReason, setWasteReason] = useState<WasteReason>("vencido");
+  const [wasteNote, setWasteNote] = useState("");
 
   const createMut = useMutation({
     mutationFn: () =>
@@ -174,6 +178,7 @@ function ProductForm({
           category,
           price: Number(price),
           stock: Number(stock) || 0,
+          employeeId,
         },
       }),
     onSuccess: () => {
@@ -193,6 +198,7 @@ function ProductForm({
           category,
           price: Number(price),
           stock: Number(stock) || 0,
+          employeeId,
         },
       }),
     onSuccess: () => {
@@ -204,13 +210,22 @@ function ProductForm({
   });
 
   const stockMut = useMutation({
-    mutationFn: (delta: number) =>
+    mutationFn: (payload: { delta: number; reason?: WasteReason; note?: string }) =>
       adjustStock({
-        data: { id: product!.id, delta, employeeId: employeeId! },
+        data: {
+          id: product!.id,
+          delta: payload.delta,
+          employeeId: employeeId!,
+          reason: payload.reason,
+          note: payload.note,
+        },
       }),
     onSuccess: (next) => {
       setLiveStock(next.stock);
       setStock(String(next.stock));
+      setWasteOpen(false);
+      setWasteNote("");
+      setWasteQty("1");
       void queryClient.invalidateQueries({ queryKey: ["products"] });
       playScanFeedback();
     },
@@ -248,19 +263,72 @@ function ProductForm({
             <p className="text-xs font-medium tracking-wide text-muted uppercase">Existencias</p>
             <p className="mt-1 text-3xl font-semibold tabular-nums">{liveStock}</p>
             <div className="mt-3 grid grid-cols-4 gap-2">
-              {[-1, 1, 5, 10].map((delta) => (
+              {[1, 5, 10].map((delta) => (
                 <Button
                   key={delta}
                   type="button"
-                  variant={delta < 0 ? "secondary" : "primary"}
                   disabled={stockMut.isPending}
-                  onClick={() => stockMut.mutate(delta)}
+                  onClick={() => stockMut.mutate({ delta })}
                 >
-                  {delta < 0 ? <Minus className="size-4" /> : <Plus className="size-4" />}
-                  {Math.abs(delta)}
+                  <Plus className="size-4" />
+                  {delta}
                 </Button>
               ))}
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={stockMut.isPending || liveStock <= 0}
+                onClick={() => setWasteOpen(true)}
+              >
+                <Minus className="size-4" />
+              </Button>
             </div>
+            {wasteOpen ? (
+              <div className="mt-3 space-y-2 rounded-xl bg-bg-elevated p-3">
+                <p className="text-sm font-medium">¿Por qué sale?</p>
+                <Input
+                  value={wasteQty}
+                  inputMode="numeric"
+                  onChange={(e) => setWasteQty(e.target.value.replace(/\D/g, ""))}
+                  aria-label="Cantidad a sacar"
+                />
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(["vencido", "roto", "otro"] as WasteReason[]).map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setWasteReason(key)}
+                      className={cn(
+                        "h-9 rounded-full text-xs font-medium",
+                        wasteReason === key ? "bg-fg text-primary-fg" : "bg-fill text-muted",
+                      )}
+                    >
+                      {WASTE_LABEL[key]}
+                    </button>
+                  ))}
+                </div>
+                <Input
+                  value={wasteNote}
+                  onChange={(e) => setWasteNote(e.target.value)}
+                  placeholder={wasteReason === "otro" ? "¿Qué pasó?" : "Detalle (opcional)"}
+                />
+                <Button
+                  type="button"
+                  variant="danger"
+                  className="w-full"
+                  disabled={stockMut.isPending || !Number(wasteQty) || (wasteReason === "otro" && !wasteNote.trim())}
+                  onClick={() =>
+                    stockMut.mutate({
+                      delta: -Math.abs(Number(wasteQty) || 1),
+                      reason: wasteReason,
+                      note: wasteNote.trim() || undefined,
+                    })
+                  }
+                >
+                  Sacar del inventario
+                </Button>
+              </div>
+            ) : null}
           </div>
         ) : null}
 

@@ -34,7 +34,7 @@ function GerenteAjustes() {
   const mutation = useMutation({
     mutationFn: () =>
       saveSettings({
-        data: { storeName, sinpePhone, sinpeHolder },
+        data: { storeName, sinpePhone, sinpeHolder, actorId: session!.employeeId },
       }),
     onSuccess: (data) => {
       queryClient.setQueryData(["settings"], data);
