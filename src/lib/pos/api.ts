@@ -1,13 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { costaRicaStamp, startOfCostaRicaWeekIso, addDaysIso, weekDayKeys, formatWeekRange, percentDelta, costaRicaYmd } from "@/lib/money";
+import { costaRicaStamp, startOfCostaRicaWeekIso, startOfCostaRicaDayIso, addDaysIso, weekDayKeys, formatWeekRange, percentDelta, costaRicaYmd } from "@/lib/money";
 import { DEFAULT_SETTINGS, SEED_PRODUCTS } from "./catalog";
 import { parseAnimal, parseColor } from "./avatar";
 import { normalizeRole } from "./staff";
+import { parseIvaRate, parseUnit } from "./types";
 import type {
   CashierStat,
   CashClose,
   DailyPerformance,
+  ExpiringItem,
   GondoPerf,
   InventoryEvent,
   InventoryKind,
@@ -66,7 +68,7 @@ async function ensureSeed(sql: Sql) {
   }
 }
 
-function asProduct(row: {
+type ProductRow = {
   id: number;
   barcode: string;
   name: string;
@@ -74,7 +76,16 @@ function asProduct(row: {
   price: number;
   stock: number;
   active: boolean;
-}): Product {
+  cabys: string | null;
+  iva_rate: number | null;
+  cost: number | null;
+  unit: string | null;
+  min_stock: number | null;
+  supplier: string | null;
+  expires_on: string | null;
+};
+
+function asProduct(row: ProductRow): Product {
   return {
     id: row.id,
     barcode: row.barcode,
@@ -83,6 +94,13 @@ function asProduct(row: {
     price: Number(row.price),
     stock: Number(row.stock),
     active: Boolean(row.active),
+    cabys: row.cabys?.trim() ?? "",
+    ivaRate: parseIvaRate(Number(row.iva_rate ?? 13)),
+    cost: Number(row.cost ?? 0),
+    unit: parseUnit(row.unit),
+    minStock: Number(row.min_stock ?? 5),
+    supplier: row.supplier?.trim() ?? "",
+    expiresOn: row.expires_on ? String(row.expires_on).slice(0, 10) : null,
   };
 }
 
@@ -127,16 +145,9 @@ async function logEvent(
 export const listProducts = createServerFn({ method: "GET" }).handler(async () => {
   const sql = await db();
   await ensureSeed(sql);
-  const rows = await sql<{
-    id: number;
-    barcode: string;
-    name: string;
-    category: string;
-    price: number;
-    stock: number;
-    active: boolean;
-  }>`
-    select id, barcode, name, category, price, stock, active
+  const rows = await sql<ProductRow>`
+    select id, barcode, name, category, price, stock, active,
+           cabys, iva_rate, cost, unit, min_stock, supplier, expires_on::text as expires_on
     from products
     where active = true
     order by category, name
@@ -149,16 +160,9 @@ export const lookupBarcode = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const sql = await db();
     await ensureSeed(sql);
-    const rows = await sql<{
-      id: number;
-      barcode: string;
-      name: string;
-      category: string;
-      price: number;
-      stock: number;
-      active: boolean;
-    }>`
-      select id, barcode, name, category, price, stock, active
+    const rows = await sql<ProductRow>`
+      select id, barcode, name, category, price, stock, active,
+           cabys, iva_rate, cost, unit, min_stock, supplier, expires_on::text as expires_on
       from products
       where barcode = ${data.barcode} and active = true
       limit 1
@@ -174,23 +178,43 @@ export const createProduct = createServerFn({ method: "POST" })
       category: z.string().trim().min(1).max(40),
       price: z.number().int().positive().max(10_000_000),
       stock: z.number().int().nonnegative().max(100_000),
+      cabys: z.string().trim().max(13).optional(),
+      ivaRate: z.union([z.literal(13), z.literal(4), z.literal(2), z.literal(1), z.literal(0)]).optional(),
+      cost: z.number().int().nonnegative().max(10_000_000).optional(),
+      unit: z.enum(["unidad", "kg", "litro", "paquete"]).optional(),
+      minStock: z.number().int().nonnegative().max(100_000).optional(),
+      supplier: z.string().trim().max(80).optional(),
+      expiresOn: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .nullable()
+        .optional(),
       employeeId: z.number().int().positive().optional(),
     }),
   )
   .handler(async ({ data }) => {
     const sql = await db();
-    const rows = await sql<{
-      id: number;
-      barcode: string;
-      name: string;
-      category: string;
-      price: number;
-      stock: number;
-      active: boolean;
-    }>`
-      insert into products (barcode, name, category, price, stock)
-      values (${data.barcode}, ${data.name}, ${data.category}, ${data.price}, ${data.stock})
-      returning id, barcode, name, category, price, stock, active
+    const cabys = (data.cabys ?? "").replace(/\D/g, "");
+    if (cabys && (cabys.length < 8 || cabys.length > 13)) {
+      throw new Error("El CABYS tiene entre 8 y 13 dígitos");
+    }
+    const ivaRate = data.ivaRate ?? 13;
+    const cost = data.cost ?? 0;
+    const unit = data.unit ?? "unidad";
+    const minStock = data.minStock ?? 5;
+    const supplier = data.supplier ?? "";
+    const expiresOn = data.expiresOn ?? null;
+    const rows = await sql<ProductRow>`
+      insert into products (
+        barcode, name, category, price, stock,
+        cabys, iva_rate, cost, unit, min_stock, supplier, expires_on
+      )
+      values (
+        ${data.barcode}, ${data.name}, ${data.category}, ${data.price}, ${data.stock},
+        ${cabys}, ${ivaRate}, ${cost}, ${unit}, ${minStock}, ${supplier}, ${expiresOn}
+      )
+      returning id, barcode, name, category, price, stock, active,
+                cabys, iva_rate, cost, unit, min_stock, supplier, expires_on::text as expires_on
     `;
     const product = asProduct(rows[0]!);
     if (data.employeeId) {
@@ -216,40 +240,54 @@ export const updateProduct = createServerFn({ method: "POST" })
       category: z.string().trim().min(1).max(40),
       price: z.number().int().positive().max(10_000_000),
       stock: z.number().int().nonnegative().max(100_000),
+      cabys: z.string().trim().max(13).optional(),
+      ivaRate: z.union([z.literal(13), z.literal(4), z.literal(2), z.literal(1), z.literal(0)]).optional(),
+      cost: z.number().int().nonnegative().max(10_000_000).optional(),
+      unit: z.enum(["unidad", "kg", "litro", "paquete"]).optional(),
+      minStock: z.number().int().nonnegative().max(100_000).optional(),
+      supplier: z.string().trim().max(80).optional(),
+      expiresOn: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .nullable()
+        .optional(),
       employeeId: z.number().int().positive().optional(),
     }),
   )
   .handler(async ({ data }) => {
     const sql = await db();
-    const prev = await sql<{
-      id: number;
-      barcode: string;
-      name: string;
-      category: string;
-      price: number;
-      stock: number;
-      active: boolean;
-    }>`
-      select id, barcode, name, category, price, stock, active
+    const prev = await sql<ProductRow>`
+      select id, barcode, name, category, price, stock, active,
+           cabys, iva_rate, cost, unit, min_stock, supplier, expires_on::text as expires_on
       from products where id = ${data.id} limit 1
     `;
     if (!prev[0]) throw new Error("Producto no encontrado");
-    const rows = await sql<{
-      id: number;
-      barcode: string;
-      name: string;
-      category: string;
-      price: number;
-      stock: number;
-      active: boolean;
-    }>`
+    const cabys = (data.cabys ?? prev[0].cabys ?? "").replace(/\D/g, "");
+    if (cabys && (cabys.length < 8 || cabys.length > 13)) {
+      throw new Error("El CABYS tiene entre 8 y 13 dígitos");
+    }
+    const ivaRate = data.ivaRate ?? parseIvaRate(Number(prev[0].iva_rate ?? 13));
+    const cost = data.cost ?? Number(prev[0].cost ?? 0);
+    const unit = data.unit ?? parseUnit(prev[0].unit);
+    const minStock = data.minStock ?? Number(prev[0].min_stock ?? 5);
+    const supplier = data.supplier ?? prev[0].supplier ?? "";
+    const expiresOn = data.expiresOn === undefined ? prev[0].expires_on?.slice(0, 10) ?? null : data.expiresOn;
+    const rows = await sql<ProductRow>`
       update products
       set name = ${data.name},
           category = ${data.category},
           price = ${data.price},
-          stock = ${data.stock}
+          stock = ${data.stock},
+          cabys = ${cabys},
+          iva_rate = ${ivaRate},
+          cost = ${cost},
+          unit = ${unit},
+          min_stock = ${minStock},
+          supplier = ${supplier},
+          expires_on = ${expiresOn}
       where id = ${data.id}
-      returning id, barcode, name, category, price, stock, active
+      returning id, barcode, name, category, price, stock, active,
+                cabys, iva_rate, cost, unit, min_stock, supplier, expires_on::text as expires_on
     `;
     const product = asProduct(rows[0]!);
     if (data.employeeId && Number(prev[0].price) !== product.price) {
@@ -734,35 +772,21 @@ export const adjustStock = createServerFn({ method: "POST" })
     if (!actor[0] || normalizeRole(actor[0].role) !== "gondolero") {
       throw new Error("Solo el gondolero ajusta inventario");
     }
-    const prev = await sql<{
-      id: number;
-      barcode: string;
-      name: string;
-      category: string;
-      price: number;
-      stock: number;
-      active: boolean;
-    }>`
-      select id, barcode, name, category, price, stock, active
+    const prev = await sql<ProductRow>`
+      select id, barcode, name, category, price, stock, active,
+           cabys, iva_rate, cost, unit, min_stock, supplier, expires_on::text as expires_on
       from products where id = ${data.id} and active = true limit 1
     `;
     if (!prev[0]) throw new Error("Producto no encontrado");
     const before = Number(prev[0].stock);
     const nextStock = Math.max(0, before + data.delta);
     const actual = nextStock - before;
-    const rows = await sql<{
-      id: number;
-      barcode: string;
-      name: string;
-      category: string;
-      price: number;
-      stock: number;
-      active: boolean;
-    }>`
+    const rows = await sql<ProductRow>`
       update products
       set stock = ${nextStock}
       where id = ${data.id}
-      returning id, barcode, name, category, price, stock, active
+      returning id, barcode, name, category, price, stock, active,
+                cabys, iva_rate, cost, unit, min_stock, supplier, expires_on::text as expires_on
     `;
     const product = asProduct(rows[0]!);
     await logEvent(sql, {
@@ -854,7 +878,7 @@ export const getManagerOverview = createServerFn({ method: "POST" })
     const lowRows = await sql<{ id: number; name: string; stock: number }>`
       select id, name, stock
       from products
-      where active = true and stock <= 5
+      where active = true and stock <= min_stock
       order by stock asc, name
       limit 8
     `;
@@ -862,6 +886,21 @@ export const getManagerOverview = createServerFn({ method: "POST" })
       id: row.id,
       name: row.name,
       stock: Number(row.stock),
+    }));
+    const soon = addDaysIso(startOfCostaRicaDayIso(), 7).slice(0, 10);
+    const expRows = await sql<{ id: number; name: string; expires_on: string }>`
+      select id, name, expires_on::text as expires_on
+      from products
+      where active = true
+        and expires_on is not null
+        and expires_on <= ${soon}::date
+      order by expires_on, name
+      limit 8
+    `;
+    const expiring: ExpiringItem[] = expRows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      expiresOn: String(row.expires_on).slice(0, 10),
     }));
 
     const map = await readSettingMap(sql);
@@ -879,6 +918,7 @@ export const getManagerOverview = createServerFn({ method: "POST" })
       pendingCount: Number(pendingCount),
       teamCount: Number(teamCount),
       lowStock,
+      expiring,
       dailyGoal,
       pinResetCount: Number(pinResetCount),
       close,

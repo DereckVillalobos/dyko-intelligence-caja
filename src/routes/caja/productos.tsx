@@ -7,9 +7,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Scanner } from "@/components/pos/scanner";
 import { adjustStock, createProduct, listProducts, lookupBarcode, updateProduct } from "@/lib/pos/api";
-import { formatColones } from "@/lib/money";
+import { formatColones, costaRicaYmd, formatDay } from "@/lib/money";
 import { queryClient } from "@/lib/query-client";
-import { CATEGORIES, WASTE_LABEL, type Product, type WasteReason } from "@/lib/pos/types";
+import {
+  CATEGORIES,
+  IVA_RATES,
+  PRODUCT_UNITS,
+  WASTE_LABEL,
+  expiryState,
+  marginPct,
+  type IvaRate,
+  type Product,
+  type ProductUnit,
+  type WasteReason,
+} from "@/lib/pos/types";
 import { useStaff } from "@/lib/pos/staff";
 import { cn } from "@/lib/utils";
 import { playScanFeedback } from "@/lib/pos/beep";
@@ -38,7 +49,12 @@ function ProductosPage() {
       (p) => p.name.toLowerCase().includes(q) || p.barcode.includes(q) || p.category.toLowerCase().includes(q),
     );
   }, [products, query]);
-  const low = products.filter((p) => p.stock <= 5).length;
+  const today = costaRicaYmd();
+  const low = products.filter((p) => p.stock <= p.minStock).length;
+  const expiring = products.filter((p) => {
+    const state = expiryState(p.expiresOn, today);
+    return state === "soon" || state === "expired";
+  }).length;
 
   async function onScanned(code: string) {
     const local = products.find((p) => p.barcode === code);
@@ -71,6 +87,7 @@ function ProductosPage() {
           <h1 className="font-display text-2xl font-semibold tracking-tight">Inventario</h1>
           <p className="mt-1 text-sm text-muted">
             Acomode y cuente. {low ? `${low} con poco stock.` : "Stock al día."}
+            {expiring ? ` ${expiring} por vencer.` : ""}
           </p>
         </div>
         <div className="flex gap-2">
@@ -119,8 +136,18 @@ function ProductosPage() {
                   <span className="block text-[15px] font-semibold tabular-nums">
                     {formatColones(product.price)}
                   </span>
-                  <span className={cn("text-xs", product.stock <= 0 ? "text-danger" : product.stock <= 5 ? "text-warning" : "text-muted")}>
-                    Stock {product.stock}
+                  <span className={cn(
+                    "text-xs",
+                    product.stock <= 0 || expiryState(product.expiresOn, today) === "expired"
+                      ? "text-danger"
+                      : product.stock <= product.minStock || expiryState(product.expiresOn, today) === "soon"
+                        ? "text-warning"
+                        : "text-muted",
+                  )}>
+                    {product.stock} {product.unit}
+                    {product.expiresOn
+                      ? ` · ${expiryState(product.expiresOn, today) === "expired" ? "Vencido" : `Vence ${formatDay(product.expiresOn + "T12:00:00-06:00")}`}`
+                      : ""}
                   </span>
                 </span>
               </button>
@@ -162,6 +189,13 @@ function ProductForm({
   const [category, setCategory] = useState(product?.category ?? "Abarrotes");
   const [price, setPrice] = useState(product ? String(product.price) : "");
   const [stock, setStock] = useState(product ? String(product.stock) : "0");
+  const [cost, setCost] = useState(product && product.cost ? String(product.cost) : "");
+  const [cabys, setCabys] = useState(product?.cabys ?? "");
+  const [ivaRate, setIvaRate] = useState<IvaRate>(product?.ivaRate ?? 13);
+  const [unit, setUnit] = useState<ProductUnit>(product?.unit ?? "unidad");
+  const [minStock, setMinStock] = useState(product ? String(product.minStock) : "5");
+  const [supplier, setSupplier] = useState(product?.supplier ?? "");
+  const [expiresOn, setExpiresOn] = useState(product?.expiresOn ?? "");
   const [scanOpen, setScanOpen] = useState(false);
   const [liveStock, setLiveStock] = useState(product?.stock ?? 0);
   const [wasteOpen, setWasteOpen] = useState(false);
@@ -178,6 +212,13 @@ function ProductForm({
           category,
           price: Number(price),
           stock: Number(stock) || 0,
+          cabys,
+          ivaRate,
+          cost: Number(cost) || 0,
+          unit,
+          minStock: Number(minStock) || 0,
+          supplier,
+          expiresOn: expiresOn || null,
           employeeId,
         },
       }),
@@ -198,6 +239,13 @@ function ProductForm({
           category,
           price: Number(price),
           stock: Number(stock) || 0,
+          cabys,
+          ivaRate,
+          cost: Number(cost) || 0,
+          unit,
+          minStock: Number(minStock) || 0,
+          supplier,
+          expiresOn: expiresOn || null,
           employeeId,
         },
       }),
@@ -375,7 +423,7 @@ function ProductForm({
         </label>
         <div className="grid grid-cols-2 gap-2">
           <label className="block space-y-1">
-            <span className="text-sm font-medium">Precio (₡)</span>
+            <span className="text-sm font-medium">Precio venta (₡)</span>
             <Input
               value={price}
               inputMode="numeric"
@@ -392,7 +440,92 @@ function ProductForm({
               />
             </label>
           )}
+          <label className="block space-y-1">
+            <span className="text-sm font-medium">Precio costo (₡)</span>
+            <Input
+              value={cost}
+              inputMode="numeric"
+              onChange={(e) => setCost(e.target.value.replace(/\D/g, ""))}
+            />
+          </label>
+          <div className="flex flex-col justify-end rounded-xl bg-fill px-3.5 py-2">
+            <span className="text-xs text-muted">Margen</span>
+            <span className="text-[15px] font-semibold tabular-nums">
+              {marginPct(Number(price) || 0, Number(cost) || 0) == null
+                ? "—"
+                : `${marginPct(Number(price) || 0, Number(cost) || 0)}%`}
+            </span>
+          </div>
         </div>
+
+        <div className="space-y-1">
+          <span className="text-sm font-medium">Unidad</span>
+          <div className="grid grid-cols-4 gap-1.5">
+            {PRODUCT_UNITS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setUnit(item.id)}
+                className={cn(
+                  "h-9 rounded-full text-xs font-medium",
+                  unit === item.id ? "bg-fg text-primary-fg" : "bg-fill text-muted",
+                )}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block space-y-1">
+            <span className="text-sm font-medium">Stock mínimo</span>
+            <Input
+              value={minStock}
+              inputMode="numeric"
+              onChange={(e) => setMinStock(e.target.value.replace(/\D/g, ""))}
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-sm font-medium">Vence</span>
+            <Input type="date" value={expiresOn} onChange={(e) => setExpiresOn(e.target.value)} />
+          </label>
+        </div>
+        <label className="block space-y-1">
+          <span className="text-sm font-medium">Proveedor</span>
+          <Input value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="Opcional" />
+        </label>
+
+        <p className="pt-1 text-xs font-medium tracking-wide text-muted uppercase">Hacienda</p>
+        <label className="block space-y-1">
+          <span className="text-sm font-medium">CABYS</span>
+          <Input
+            value={cabys}
+            inputMode="numeric"
+            className="font-mono"
+            placeholder="8 a 13 dígitos"
+            onChange={(e) => setCabys(e.target.value.replace(/\D/g, "").slice(0, 13))}
+          />
+        </label>
+        <div className="space-y-1">
+          <span className="text-sm font-medium">IVA (precio con impuesto)</span>
+          <div className="grid grid-cols-5 gap-1.5">
+            {IVA_RATES.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setIvaRate(item.id)}
+                className={cn(
+                  "h-9 rounded-full text-xs font-medium",
+                  ivaRate === item.id ? "bg-fg text-primary-fg" : "bg-fill text-muted",
+                )}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <Button type="submit" className="w-full" disabled={!valid || pending}>
           {pending ? "Guardando…" : "Guardar ficha"}
         </Button>

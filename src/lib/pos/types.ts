@@ -2,6 +2,9 @@ import type { StaffRole } from "./staff";
 
 export type PaymentMethod = "cash" | "card" | "sinpe";
 
+export type IvaRate = 13 | 4 | 2 | 1 | 0;
+export type ProductUnit = "unidad" | "kg" | "litro" | "paquete";
+
 export type Product = {
   id: number;
   barcode: string;
@@ -10,6 +13,13 @@ export type Product = {
   price: number;
   stock: number;
   active: boolean;
+  cabys: string;
+  ivaRate: IvaRate;
+  cost: number;
+  unit: ProductUnit;
+  minStock: number;
+  supplier: string;
+  expiresOn: string | null;
 };
 
 export type CartLine = {
@@ -82,12 +92,19 @@ export type LowStockItem = {
   stock: number;
 };
 
+export type ExpiringItem = {
+  id: number;
+  name: string;
+  expiresOn: string;
+};
+
 export type ManagerOverview = {
   today: TodaySummary;
   cashiers: CashierStat[];
   pendingCount: number;
   teamCount: number;
   lowStock: LowStockItem[];
+  expiring: ExpiringItem[];
   dailyGoal: number;
   pinResetCount: number;
   close: CashClose | null;
@@ -232,3 +249,43 @@ export const CATEGORIES = [
   "Panadería",
   "Limpieza",
 ] as const;
+
+export const PRODUCT_UNITS: Array<{ id: ProductUnit; label: string }> = [
+  { id: "unidad", label: "Unidad" },
+  { id: "kg", label: "Kg" },
+  { id: "litro", label: "Litro" },
+  { id: "paquete", label: "Paquete" },
+];
+
+export const IVA_RATES: Array<{ id: IvaRate; label: string }> = [
+  { id: 13, label: "13%" },
+  { id: 4, label: "4%" },
+  { id: 2, label: "2%" },
+  { id: 1, label: "1%" },
+  { id: 0, label: "Exento" },
+];
+
+export function parseIvaRate(value: number | null | undefined): IvaRate {
+  if (value === 4 || value === 2 || value === 1 || value === 0) return value;
+  return 13;
+}
+
+export function parseUnit(value: string | null | undefined): ProductUnit {
+  if (value === "kg" || value === "litro" || value === "paquete") return value;
+  return "unidad";
+}
+
+export function marginPct(price: number, cost: number): number | null {
+  if (cost <= 0) return null;
+  return Math.round(((price - cost) / cost) * 100);
+}
+
+export function expiryState(expiresOn: string | null, today: string): "none" | "ok" | "soon" | "expired" {
+  if (!expiresOn) return "none";
+  if (expiresOn < today) return "expired";
+  const start = Date.parse(`${today}T12:00:00-06:00`);
+  const exp = Date.parse(`${expiresOn}T12:00:00-06:00`);
+  if (!Number.isFinite(start) || !Number.isFinite(exp)) return "ok";
+  if ((exp - start) / 86_400_000 <= 7) return "soon";
+  return "ok";
+}

@@ -1,6 +1,6 @@
 import type { Product } from "./types";
 
-export type SeedProduct = Omit<Product, "id" | "active">;
+export type SeedProduct = Pick<Product, "barcode" | "name" | "category" | "price" | "stock">;
 
 export const SEED_PRODUCTS: SeedProduct[] = [
   { barcode: "7441050000016", name: "Coca-Cola 600 ml", category: "Bebidas", price: 1250, stock: 48 },

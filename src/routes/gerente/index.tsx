@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Keypad } from "@/components/pos/keypad";
 import { CashCloseSheet } from "@/components/pos/cash-close-sheet";
 import { getManagerOverview, saveDailyGoal } from "@/lib/pos/api";
-import { formatColones, startOfCostaRicaDayIso } from "@/lib/money";
+import { formatColones, formatDay, startOfCostaRicaDayIso } from "@/lib/money";
 import { roleLabel, useGerente } from "@/lib/pos/staff";
 import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
@@ -195,6 +195,24 @@ function GerenteHoy() {
                 <span className="truncate text-[15px] font-medium">{item.name}</span>
                 <span className={item.stock <= 0 ? "text-sm text-danger" : "text-sm text-warning"}>
                   {item.stock}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {(data?.expiring.length ?? 0) > 0 ? (
+        <section className="mt-6">
+          <p className="mb-2 px-1 text-xs font-medium tracking-wide text-muted uppercase">
+            Por vencer
+          </p>
+          <ul className="ios-list divide-y divide-border overflow-hidden rounded-2xl">
+            {data!.expiring.map((item) => (
+              <li key={item.id} className="flex items-center justify-between px-4 py-3">
+                <span className="truncate text-[15px] font-medium">{item.name}</span>
+                <span className="text-sm text-warning">
+                  {formatDay(`${item.expiresOn}T12:00:00-06:00`)}
                 </span>
               </li>
             ))}
