@@ -325,6 +325,11 @@ export const createEmployee = createServerFn({ method: "POST" })
     return asPublic(rows[0]!);
   });
 
+/**
+ * Guardado temporal: la rama main aún utiliza actorId proveniente del navegador.
+ * Un atacante podría suplantar a un gerente, por lo que no aceptamos altas
+ * privilegiadas hasta que exista autorización desde una sesión verificada.
+ */
 export const createGerente = createServerFn({ method: "POST" })
   .validator(
     z.object({
@@ -335,21 +340,8 @@ export const createGerente = createServerFn({ method: "POST" })
       actorId: z.number().int().positive().optional(),
     }),
   )
-  .handler(async ({ data }) => {
-    const sql = await db();
-    // Sin sesiones del lado del servidor NO existe prueba de identidad para
-    // crear gerentes. Bloqueo temporal explícito, antes que permitir escalada.
-    // Se reactivará con requireGerente al incorporar autenticación segura.
-    throw new Error("Alta de gerentes temporalmente deshabilitada por seguridad.");
-    const { randomBytes } = await import("node:crypto");
-    const salt = randomBytes(16).toString("hex");
-    const pinHash = await hashPin(data.pin, salt);
-    const rows = await sql<EmployeeRow>`
-      insert into employees (name, pin_hash, pin_salt, role, avatar_animal, avatar_color)
-      values (${data.name}, ${pinHash}, ${salt}, 'gerente', ${data.animal}, ${data.color})
-      returning id, name, role, device_token, avatar_animal, avatar_color, must_set_pin, pin_reset_requested
-    `;
-    return asPublic(rows[0]!);
+  .handler(async () => {
+    throw new Error("Alta de gerentes deshabilitada hasta habilitar sesiones seguras.");
   });
 
 export const assignPuesto = createServerFn({ method: "POST" })
