@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AnimalAvatar, AnimalMark } from "@/components/pos/animal-avatar";
@@ -28,6 +28,7 @@ export function EmployeeForm({
   pending,
   error,
   submitHint,
+  nameExtra,
 }: {
   kicker: string;
   onBack?: () => void;
@@ -35,6 +36,7 @@ export function EmployeeForm({
   pending?: boolean;
   error?: string | null;
   submitHint?: string;
+  nameExtra?: ReactNode;
 }) {
   const [name, setName] = useState("");
   const [animal, setAnimal] = useState<AnimalKey>("fox");
@@ -97,6 +99,7 @@ export function EmployeeForm({
             placeholder="Ej. Carlos"
             onChange={(e) => setName(e.target.value)}
           />
+          {nameExtra}
           <div className="mt-auto flex flex-col gap-2">
             <Button size="lg" disabled={name.trim().length < 2} onClick={() => setStep("look")}>
               Continuar
