@@ -38,7 +38,9 @@ async function db() {
 
 async function ensureSeed(sql: Sql) {
   const [{ n }] = await sql<{ n: number }>`select count(*)::int as n from products`;
-  if (n === 0) {
+  // Nunca poblar inventario real con artículos de demostración al abrir una
+  // pantalla. En producción el catálogo comienza vacío hasta cargar datos reales.
+  if (n === 0 && process.env.NODE_ENV !== "production") {
     for (const p of SEED_PRODUCTS) {
       await sql`
         insert into products (barcode, name, category, price, stock)
