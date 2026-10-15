@@ -250,8 +250,8 @@ export const setupFirstEmployee = createServerFn({ method: "POST" })
         order by id
         limit 1
       `;
-      if (existing[0]) return asSession(existing[0]);
-      throw new Error("El equipo ya está configurado");
+      // Nunca devolver la identidad de otro empleado desde una operación pública.
+      throw new Error("El equipo ya está configurado. Ingrese con su PIN.");
     }
     const { randomBytes } = await import("node:crypto");
     const salt = randomBytes(16).toString("hex");
@@ -288,8 +288,8 @@ export const setupGerente = createServerFn({ method: "POST" })
         order by id
         limit 1
       `;
-      if (existing[0]) return asSession(existing[0]);
-      throw new Error("Ya hay un gerente");
+      // Nunca entregar la identidad de un gerente existente sin verificar PIN.
+      throw new Error("Ya hay un gerente. Ingrese con su PIN.");
     }
     const { randomBytes } = await import("node:crypto");
     const salt = randomBytes(16).toString("hex");
@@ -337,12 +337,10 @@ export const createGerente = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const sql = await db();
-    if (data.actorId) {
-      const actor = await sql<{ role: string }>`
-        select role from employees where id = ${data.actorId} and active = true limit 1
-      `;
-      if (actor[0]?.role !== "gerente") throw new Error("Solo un gerente puede agregar otro gerente");
-    }
+    // Sin sesiones del lado del servidor NO existe prueba de identidad para
+    // crear gerentes. Bloqueo temporal explícito, antes que permitir escalada.
+    // Se reactivará con requireGerente al incorporar autenticación segura.
+    throw new Error("Alta de gerentes temporalmente deshabilitada por seguridad.");
     const { randomBytes } = await import("node:crypto");
     const salt = randomBytes(16).toString("hex");
     const pinHash = await hashPin(data.pin, salt);
