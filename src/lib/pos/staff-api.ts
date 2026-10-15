@@ -272,9 +272,22 @@ export const setupGerente = createServerFn({ method: "POST" })
       pin: pinSchema,
       animal: animalSchema,
       color: colorSchema,
+      setupCode: z.string().trim().max(128).optional(),
     }),
   )
   .handler(async ({ data }) => {
+    const required = process.env.DYKO_SETUP_CODE?.trim();
+    if (process.env.NODE_ENV === "production" && (!required || required.length < 32)) {
+      throw new Error("DYKO_SETUP_CODE de al menos 32 caracteres es obligatorio para iniciar producción.");
+    }
+    if (required) {
+      const { timingSafeEqual } = await import("node:crypto");
+      const entered = Buffer.from(data.setupCode ?? "");
+      const expected = Buffer.from(required);
+      if (entered.length !== expected.length || !timingSafeEqual(entered, expected)) {
+        throw new Error("Código de instalación incorrecto");
+      }
+    }
     const sql = await db();
     const [{ n }] = await sql<{ n: number }>`
       select count(*)::int as n from employees
