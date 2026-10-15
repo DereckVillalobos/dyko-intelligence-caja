@@ -3,6 +3,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { AnimalAvatar } from "@/components/pos/animal-avatar";
 import { EmployeeForm, type EmployeeDraft } from "@/components/pos/employee-form";
 import { PinPad } from "@/components/pos/pin-pad";
@@ -66,6 +67,7 @@ export function GerenteGate({ children }: { children: React.ReactNode }) {
 function FirstGerente({ onDone }: { onDone: (session: StaffSession) => void }) {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
+  const [setupCode, setSetupCode] = useState("");
   const mutation = useMutation({
     mutationFn: (draft: EmployeeDraft) =>
       setupGerente({
@@ -74,6 +76,7 @@ function FirstGerente({ onDone }: { onDone: (session: StaffSession) => void }) {
           pin: draft.pin,
           animal: draft.animal,
           color: draft.color,
+          setupCode: setupCode.trim(),
         },
       }),
     onSuccess: (session) => {
@@ -89,6 +92,19 @@ function FirstGerente({ onDone }: { onDone: (session: StaffSession) => void }) {
       onBack={() => navigate({ to: "/" })}
       pending={mutation.isPending}
       error={error}
+      nameExtra={
+        <label className="mt-4 block text-sm font-medium">
+          Código de instalación (solo primera configuración)
+          <Input
+            className="mt-2"
+            type="password"
+            autoComplete="off"
+            value={setupCode}
+            placeholder="Código privado del administrador"
+            onChange={(event) => setSetupCode(event.target.value)}
+          />
+        </label>
+      }
       onSubmit={(draft) => mutation.mutate(draft)}
     />
   );
