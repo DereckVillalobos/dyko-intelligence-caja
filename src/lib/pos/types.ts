@@ -278,8 +278,15 @@ export function parseUnit(value: string | null | undefined): ProductUnit {
   return "unidad";
 }
 
+/** Margen bruto sobre la venta (no recargo/markup sobre el costo). */
 export function marginPct(price: number, cost: number): number | null {
-  if (cost <= 0) return null;
+  if (!Number.isFinite(price) || !Number.isFinite(cost) || price <= 0 || cost <= 0) return null;
+  return Math.round(((price - cost) / price) * 100);
+}
+
+/** Recargo sobre el costo; indicador distinto del margen bruto. */
+export function markupPct(price: number, cost: number): number | null {
+  if (!Number.isFinite(price) || !Number.isFinite(cost) || cost <= 0) return null;
   return Math.round(((price - cost) / cost) * 100);
 }
 
