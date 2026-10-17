@@ -250,8 +250,8 @@ export const setupFirstEmployee = createServerFn({ method: "POST" })
         order by id
         limit 1
       `;
-      if (existing[0]) return asSession(existing[0]);
-      throw new Error("El equipo ya está configurado");
+      // Nunca devolver la identidad de otro empleado desde una operación pública.
+      throw new Error("El equipo ya está configurado. Ingrese con su PIN.");
     }
     const { randomBytes } = await import("node:crypto");
     const salt = randomBytes(16).toString("hex");
@@ -272,9 +272,22 @@ export const setupGerente = createServerFn({ method: "POST" })
       pin: pinSchema,
       animal: animalSchema,
       color: colorSchema,
+      setupCode: z.string().trim().max(128).optional(),
     }),
   )
   .handler(async ({ data }) => {
+    const required = process.env.DYKO_SETUP_CODE?.trim();
+    if (process.env.NODE_ENV === "production" && (!required || required.length < 32)) {
+      throw new Error("DYKO_SETUP_CODE de al menos 32 caracteres es obligatorio para iniciar producción.");
+    }
+    if (required) {
+      const { timingSafeEqual } = await import("node:crypto");
+      const entered = Buffer.from(data.setupCode ?? "");
+      const expected = Buffer.from(required);
+      if (entered.length !== expected.length || !timingSafeEqual(entered, expected)) {
+        throw new Error("Código de instalación incorrecto");
+      }
+    }
     const sql = await db();
     const [{ n }] = await sql<{ n: number }>`
       select count(*)::int as n from employees
@@ -288,8 +301,8 @@ export const setupGerente = createServerFn({ method: "POST" })
         order by id
         limit 1
       `;
-      if (existing[0]) return asSession(existing[0]);
-      throw new Error("Ya hay un gerente");
+      // Nunca entregar la identidad de un gerente existente sin verificar PIN.
+      throw new Error("Ya hay un gerente. Ingrese con su PIN.");
     }
     const { randomBytes } = await import("node:crypto");
     const salt = randomBytes(16).toString("hex");
@@ -325,6 +338,11 @@ export const createEmployee = createServerFn({ method: "POST" })
     return asPublic(rows[0]!);
   });
 
+/**
+ * Guardado temporal: la rama main aún utiliza actorId proveniente del navegador.
+ * Un atacante podría suplantar a un gerente, por lo que no aceptamos altas
+ * privilegiadas hasta que exista autorización desde una sesión verificada.
+ */
 export const createGerente = createServerFn({ method: "POST" })
   .validator(
     z.object({
@@ -335,23 +353,8 @@ export const createGerente = createServerFn({ method: "POST" })
       actorId: z.number().int().positive().optional(),
     }),
   )
-  .handler(async ({ data }) => {
-    const sql = await db();
-    if (data.actorId) {
-      const actor = await sql<{ role: string }>`
-        select role from employees where id = ${data.actorId} and active = true limit 1
-      `;
-      if (actor[0]?.role !== "gerente") throw new Error("Solo un gerente puede agregar otro gerente");
-    }
-    const { randomBytes } = await import("node:crypto");
-    const salt = randomBytes(16).toString("hex");
-    const pinHash = await hashPin(data.pin, salt);
-    const rows = await sql<EmployeeRow>`
-      insert into employees (name, pin_hash, pin_salt, role, avatar_animal, avatar_color)
-      values (${data.name}, ${pinHash}, ${salt}, 'gerente', ${data.animal}, ${data.color})
-      returning id, name, role, device_token, avatar_animal, avatar_color, must_set_pin, pin_reset_requested
-    `;
-    return asPublic(rows[0]!);
+  .handler(async () => {
+    throw new Error("Alta de gerentes deshabilitada hasta habilitar sesiones seguras.");
   });
 
 export const assignPuesto = createServerFn({ method: "POST" })

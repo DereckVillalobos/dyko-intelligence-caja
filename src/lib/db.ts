@@ -16,6 +16,11 @@ const databaseUrl =
  * the app has a working database even with nothing configured — the live preview
  * included. Swap in Neon later by just setting `DATABASE_URL`; no code changes.
  */
+// El respaldo en memoria es exclusivamente para desarrollo. En Vercel una
+// instancia sin DATABASE_URL perdería ventas y movimientos al reiniciarse.
+if (process.env.NODE_ENV === "production" && !databaseUrl) {
+  throw new Error("DATABASE_URL es obligatorio en producción; se rechaza PGlite en memoria.");
+}
 export const dbSource: DbSource = databaseUrl ? "neon" : "pglite";
 
 /**
